@@ -53,17 +53,20 @@ class Devorador {
     this.type = type;
     this.wobble = Math.random() * Math.PI * 2;
     this.patrolTarget = null;
-    this.shootTimer = 1 + Math.random();
+    this.shootTimer = 1.6 + Math.random();
+    this.telegraph = 0; // 0..1 — sobe pouco antes do disparo, usado como aviso visual
     this.hitFlash = 0;
     this.knockX = 0; this.knockY = 0; // impulso de recuo ao levar dano
     this.circleDir = Math.random() < 0.5 ? 1 : -1; // sentido em que este tipo "cerca" o jogador
 
+    // atiradores mantêm mais distância e são um pouco mais lentos: o desafio deve
+    // vir de se posicionar bem, não de fugir de uma chuva de projéteis encostado neles.
     const stats = {
       chaser:  { r: 12, speed: 58,  hp: 40,  dmg: 10, keepDist: 0 },
       tank:    { r: 18, speed: 24,  hp: 110, dmg: 16, keepDist: 0 },
       hunter:  { r: 8,  speed: 105, hp: 18,  dmg: 7,  keepDist: 0 },
-      shooter: { r: 13, speed: 40,  hp: 32,  dmg: 8,  keepDist: 190 },
-      boss:    { r: 30, speed: 34,  hp: 260, dmg: 20, keepDist: 150 }
+      shooter: { r: 13, speed: 36,  hp: 32,  dmg: 8,  keepDist: 220 },
+      boss:    { r: 30, speed: 34,  hp: 260, dmg: 20, keepDist: 160 }
     };
     const s = stats[type] || stats.chaser;
     this.r = s.r;
@@ -106,6 +109,10 @@ class Devorador {
 
     if(this.type === 'shooter' || this.type === 'boss'){
       this.shootTimer -= dt;
+      const telegraphWindow = 0.4;
+      this.telegraph = this.shootTimer <= telegraphWindow
+        ? 1 - Math.max(0, this.shootTimer) / telegraphWindow
+        : 0;
       const dx = player.x - this.x, dy = player.y - this.y;
       const dist = Math.hypot(dx, dy) || 1;
       if(dist > this.keepDist + 20){
@@ -119,7 +126,9 @@ class Devorador {
         this.y += ty * this.circleDir * this.speed * 0.85 * dt;
       }
       if(this.shootTimer <= 0){
-        this.shootTimer = this.type === 'boss' ? (1.1 + Math.random() * 0.6) : (1.7 + Math.random() * 0.9);
+        // recarga mais longa: menos projéteis na tela, cada um mais fácil de ler
+        this.shootTimer = this.type === 'boss' ? (1.7 + Math.random() * 0.7) : (2.5 + Math.random() * 1.1);
+        this.telegraph = 0;
         if(onShoot) onShoot(this);
       }
     } else {

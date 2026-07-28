@@ -174,6 +174,15 @@ class Game {
 
   onPhaseComplete(){
     this.audio.phaseComplete();
+    // completar uma fase inteira recupera parte da vida: o jogador nunca deve
+    // sentir que uma partida está perdida só porque errou no começo.
+    const p = this.player;
+    if(p && p.health > 0 && p.health < p.maxHealth){
+      const healAmount = Math.max(15, p.maxHealth * 0.25);
+      p.health = Math.min(p.maxHealth, p.health + healAmount);
+      this.audio.heal();
+      this.spawnParticles(p.x, p.y, '#4ade80', 14, { life: 0.5, speed: 90, glow: true });
+    }
     const i = this.phaseIndex;
     if(i < this.phaseClasses.length - 1){
       this.state = 'dialogue';

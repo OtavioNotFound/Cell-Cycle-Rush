@@ -66,4 +66,14 @@ class AudioManager {
     this.tone(520, 0.09, 'triangle', 0.05);
     this.tone(740, 0.09, 'triangle', 0.045, 0.08);
   }
+  /** Clique magnético curto — o item está perto o suficiente da posição certa. */
+  snap(){
+    this.tone(900, 0.05, 'triangle', 0.05);
+    this.tone(1200, 0.05, 'triangle', 0.04, 0.03);
+  }
+  /** Tom quente de recuperação de vida (orbe, bônus de fase, combo). */
+  heal(){
+    this.tone(392, 0.12, 'sine', 0.07);
+    this.tone(587, 0.16, 'sine', 0.07, 0.08);
+  }
 }
