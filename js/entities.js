@@ -18,6 +18,33 @@ class Player {
     this.attackFlash = 0; // 0..1, usado para animar o pulso de ataque
     this.hurtFlash = 0;   // 0..1, usado para o contorno vermelho ao levar dano
     this.vx = 0; this.vy = 0; // velocidade atual (dá peso ao movimento)
+    this._lastAngle = 0;
+
+    // ---- Adaptações (habilidades permanentes desbloqueadas ao vencer bosses) ----
+    this.abilities = { dash: false, shot: false, pulse: false, overload: false };
+
+    // Dash Celular (Boss 1)
+    this.dashCooldownMs = 3000;
+    this.dashDurationMs = 170;
+    this.dashSpeedBoost = 640;
+    this.dashCooldownUntil = 0;
+    this.dashActiveUntil = 0;
+    this.dashDirX = 1; this.dashDirY = 0;
+
+    // Disparo de Energia (Boss 2)
+    this.shotCooldownMs = 850;
+    this.shotCooldownUntil = 0;
+
+    // Pulso Celular (Boss 3)
+    this.pulseCooldownMs = 6000;
+    this.pulseCooldownUntil = 0;
+    this.pulseFlash = 0; // 0..1, anima o anel do pulso
+
+    // Sobrecarga Mitótica (Boss Final)
+    this.overloadCooldownMs = 22000;
+    this.overloadDurationMs = 6000;
+    this.overloadCooldownUntil = 0;
+    this.overloadActiveUntil = 0;
   }
 
   get isInvulnerable(){
@@ -27,6 +54,13 @@ class Player {
   get canAttack(){
     return performance.now() >= this.attackCooldownUntil;
   }
+
+  get isDashing(){ return performance.now() < this.dashActiveUntil; }
+  get canDash(){ return this.abilities.dash && performance.now() >= this.dashCooldownUntil; }
+  get canShot(){ return this.abilities.shot && performance.now() >= this.shotCooldownUntil; }
+  get canPulse(){ return this.abilities.pulse && performance.now() >= this.pulseCooldownUntil; }
+  get isOverloaded(){ return performance.now() < this.overloadActiveUntil; }
+  get canOverload(){ return this.abilities.overload && performance.now() >= this.overloadCooldownUntil; }
 
   takeDamage(amount, now){
     if(now < this.invulnUntil) return false;
@@ -170,6 +204,9 @@ class Projectile {
     this.color = opts.color ?? '#ff6b81';
     this.dead = false;
     this.life = 4;
+    this.friendly = opts.friendly ?? false;
+    this.pierceLeft = opts.pierce ?? 0; // quantos inimigos ainda pode atravessar após o 1º acerto
+    this.hitIds = null; // Set de Devoradores já atingidos (evita acertar o mesmo 2x)
   }
 
   update(dt){

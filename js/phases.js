@@ -9,6 +9,7 @@ class PhaseBase {
     this.game = game;
     this.devouradores = [];
     this.projectiles = [];
+    this.playerProjectiles = []; // Disparo de Energia (Boss 2)
     this.items = [];
     this.zones = [];
     this.message = '';
@@ -142,6 +143,77 @@ class PhaseBase {
     this.game.registerKill(d);
     const combo = this.game.combo;
     this.showMessage(d.type === 'boss' ? 'O Devorador foi contido!' : (combo >= 4 ? `Combo x${combo}!` : 'Devorador eliminado!'));
+  }
+
+  /** Remove da lista os Devoradores que morreram, com a mesma explosão/drop do ataque corpo a corpo. */
+  cleanupDeadDevouradores(){
+    this.devouradores = this.devouradores.filter(d => {
+      if(d.isDead){
+        const color = d.type === 'boss' ? '#ffb057' : (d.type === 'tank' ? '#b23347' : (d.type === 'hunter' ? '#ff3b4e' : '#e6465e'));
+        this.game.spawnExplosion(d.x, d.y, color);
+        this.maybeDropHealthOrb(d);
+        return false;
+      }
+      return true;
+    });
+  }
+
+  // ---------------- Boss 2: Disparo de Energia ----------------
+
+  spawnPlayerProjectile(x, y, targetX, targetY, opts = {}){
+    const proj = new Projectile(x, y, targetX, targetY, Object.assign({
+      speed: 460, damage: 18, r: 6, color: '#8fe3ff', pierce: 1, friendly: true
+    }, opts));
+    this.playerProjectiles.push(proj);
+  }
+
+  updatePlayerProjectiles(dt){
+    const b = this.game.bounds;
+    this.playerProjectiles.forEach(pr => pr.update(dt));
+    this.playerProjectiles = this.playerProjectiles.filter(pr => {
+      if(pr.dead) return false;
+      if(pr.x < -20 || pr.x > b.w + 20 || pr.y < -20 || pr.y > b.h + 20) return false;
+      for(const d of this.devouradores){
+        if(pr.hitIds && pr.hitIds.has(d)) continue;
+        const dist = Math.hypot(pr.x - d.x, pr.y - d.y);
+        if(dist < pr.r + d.r){
+          if(!pr.hitIds) pr.hitIds = new Set();
+          pr.hitIds.add(d);
+          const died = d.takeDamage(pr.damage);
+          d.applyKnockback(pr.x, pr.y, 110);
+          this.game.spawnParticles(d.x, d.y, pr.color, 6, { life: 0.25, speed: 90, r: 2 });
+          this.game.audio.impact();
+          pr.pierceLeft -= 1;
+          if(died) this.onDevouradorDefeated(d);
+          if(pr.pierceLeft < 0) pr.dead = true;
+          break;
+        }
+      }
+      return !pr.dead;
+    });
+    this.cleanupDeadDevouradores();
+  }
+
+  // ---------------- Boss 3: Pulso Celular ----------------
+
+  /** Empurra (e causa um dano leve em) Devoradores próximos, sem exigir mira. */
+  applyPulse(range, force, damage){
+    const p = this.game.player;
+    let hitAny = false;
+    for(const d of this.devouradores){
+      const dist = Math.hypot(p.x - d.x, p.y - d.y);
+      if(dist <= range + d.r){
+        hitAny = true;
+        if(damage > 0){
+          const died = d.takeDamage(damage);
+          if(died) this.onDevouradorDefeated(d);
+        }
+        d.applyKnockback(p.x, p.y, force);
+        this.game.spawnParticles(d.x, d.y, '#bfe9ff', 5, { life: 0.25, speed: 80, r: 2 });
+      }
+    }
+    this.cleanupDeadDevouradores();
+    if(hitAny) this.game.triggerShake(4, 0.15);
   }
 
   // ---------------- Colisões / itens ----------------
@@ -500,9 +572,11 @@ class PhaseBase {
     ctx.save();
     ctx.translate(p.x, p.y);
 
-    // brilho pulsante da célula
-    const glowR = p.r * (2.4 + Math.sin(performance.now() / 600) * 0.3);
-    const glowColor = p.hurtFlash > 0 ? `rgba(255,77,94,${0.35 * p.hurtFlash})` : 'rgba(143,227,199,0.22)';
+    // brilho pulsante da célula — Sobrecarga Mitótica tinge o brilho de dourado
+    const glowR = p.r * (2.4 + Math.sin(performance.now() / 600) * 0.3) * (p.isOverloaded ? 1.4 : 1);
+    const glowColor = p.hurtFlash > 0 ? `rgba(255,77,94,${0.35 * p.hurtFlash})`
+      : p.isOverloaded ? 'rgba(255,209,102,0.45)'
+      : 'rgba(143,227,199,0.22)';
     const grad = ctx.createRadialGradient(0, 0, p.r * 0.4, 0, 0, glowR);
     grad.addColorStop(0, glowColor);
     grad.addColorStop(1, 'rgba(143,227,199,0)');
@@ -523,6 +597,32 @@ class PhaseBase {
       ctx.restore();
     }
 
+    // anel expansivo do Pulso Celular
+    if(p.pulseFlash > 0){
+      ctx.save();
+      ctx.globalAlpha = p.pulseFlash * 0.8;
+      ctx.strokeStyle = '#8fd9ff';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, 120 * (1 - p.pulseFlash) + p.r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // rastro do Dash Celular: um streak simples na direção do impulso
+    if(p.isDashing){
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = '#bfe9ff';
+      ctx.lineWidth = p.r * 1.1;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-p.dashDirX * 26, -p.dashDirY * 26);
+      ctx.lineTo(0, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if(p.isInvulnerable && Math.floor(performance.now() / 100) % 2 === 0){
       ctx.globalAlpha = 0.4;
     }
@@ -537,7 +637,7 @@ class PhaseBase {
     ctx.scale(1 + stretchAmt, 1 - stretchAmt);
     ctx.rotate(-moveAngle);
 
-    ctx.fillStyle = p.hurtFlash > 0 ? '#ffb3ba' : '#8fe3c7';
+    ctx.fillStyle = p.hurtFlash > 0 ? '#ffb3ba' : (p.isOverloaded ? '#ffe1a3' : '#8fe3c7');
     ctx.beginPath();
     const points = 16;
     for(let i = 0; i < points; i++){
@@ -970,7 +1070,11 @@ class AnafasePhase extends PhaseBase {
 class TelofasePhase extends PhaseBase {
   get index(){ return 4; }
   get name(){ return 'Telófase'; }
-  get objective(){ return 'Proteja os dois novos núcleos até a divisão se completar.'; }
+  get objective(){
+    return this.bossDefeated
+      ? 'Núcleo Devorador destruído! Proteja os núcleos até o fim.'
+      : 'Proteja os dois novos núcleos e derrote o Núcleo Devorador.';
+  }
 
   constructor(game){
     super(game);
@@ -979,6 +1083,7 @@ class TelofasePhase extends PhaseBase {
     this.phaseTimeMax = this.defenseDuration;
     this.nucleusShieldMax = 100;
     this.drainRate = 9; // dano/seg quando um Devorador fica perto do núcleo
+    this.bossDefeated = false;
 
     const b = this.game.bounds;
     this.zones.push(new Zone(90, b.h / 2, 55, {
@@ -991,6 +1096,26 @@ class TelofasePhase extends PhaseBase {
     this.spawnEnemyWave(['chaser', 'hunter', 'shooter']);
     this.spawnEnemyWave(['boss'], 1);
     this.initSpawnFlow(['chaser', 'hunter'], { minAlive: 3, maxMinAlive: 6, rampEvery: 18, bonusTypes: ['shooter'] });
+  }
+
+  /**
+   * Derrotar o Núcleo Devorador (o boss desta fase) é o clímax da campanha:
+   * ele para de mandar reforços (spawnPool = null) e, na primeira vez, concede
+   * a Sobrecarga Mitótica na hora — o jogador ainda tem tempo de fase sobrando
+   * para realmente usá-la, em vez de recebê-la só na tela de vitória.
+   */
+  onDevouradorDefeated(d){
+    super.onDevouradorDefeated(d);
+    if(d.type === 'boss' && !this.bossDefeated){
+      this.bossDefeated = true;
+      this.spawnPool = null; // encerra o fluxo contínuo: nenhum Devorador novo a partir daqui
+      this.showMessage('Núcleo Devorador destruído! Proteja os núcleos até o fim.');
+      const p = this.game.player;
+      if(p && !p.abilities.overload){
+        p.abilities.overload = true;
+        this.game.showUnlockScreen(ABILITY_UNLOCKS[4], () => { this.game.state = 'playing'; });
+      }
+    }
   }
 
   onPhaseTimeout(){
