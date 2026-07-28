@@ -43,6 +43,9 @@ class Game {
     this.hitStopUntil = 0;
     // rastro discreto da célula do jogador
     this.trailTimer = 0;
+    // combo de abates: recompensa jogar agressivo (cura + regen de energia mais rápida)
+    this.combo = 0;
+    this.comboTimer = 0;
 
     this.dom = {
       titleScreen: document.getElementById('titleScreen'),
@@ -108,6 +111,24 @@ class Game {
   /** Congela o jogo por alguns ms (hit-stop) para dar peso a um golpe que acertou. */
   triggerHitStop(ms){
     this.hitStopUntil = Math.max(this.hitStopUntil, performance.now() + ms);
+  }
+
+  /**
+   * Recompensa um abate: mantém o combo vivo, devolve energia e, a cada 3
+   * abates em sequência, cura um pouco. É o que faz jogar agressivo compensar.
+   */
+  registerKill(d){
+    this.combo++;
+    this.comboTimer = 2.4;
+    const p = this.player;
+    if(!p) return;
+    if(d.type !== 'boss'){
+      p.energy = Math.min(p.maxEnergy, p.energy + 10);
+    }
+    if(this.combo % 3 === 0 && p.health > 0){
+      p.health = Math.min(p.maxHealth, p.health + 4);
+      this.spawnParticles(p.x, p.y, '#4ade80', 6, { life: 0.3, speed: 70 });
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -382,6 +403,10 @@ class Game {
       this.handleMovement(dt);
       this.phase.update(dt);
       if(this.phase.completed) this.onPhaseComplete();
+      if(this.combo > 0){
+        this.comboTimer -= dt;
+        if(this.comboTimer <= 0) this.combo = 0;
+      }
       this.updateHUD();
     }
 

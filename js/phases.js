@@ -131,8 +131,9 @@ class PhaseBase {
 
   onDevouradorDefeated(d){
     this.game.audio.success();
-    this.rewardEnergy(d.type === 'boss' ? 0 : 6);
-    this.showMessage(d.type === 'boss' ? 'O Devorador foi contido!' : 'Devorador eliminado!');
+    this.game.registerKill(d);
+    const combo = this.game.combo;
+    this.showMessage(d.type === 'boss' ? 'O Devorador foi contido!' : (combo >= 4 ? `Combo x${combo}!` : 'Devorador eliminado!'));
   }
 
   // ---------------- Colisões / itens ----------------
@@ -206,15 +207,61 @@ class PhaseBase {
     p.y = Math.max(p.r, Math.min(b.h - p.r, p.y));
   }
 
+  // A energia agora regenera sozinha (mais rápido durante um combo) — o
+  // jogador nunca precisa parar de jogar para "farmar" energia pelo mapa.
+  // Isso substitui o antigo dreno constante + penalidade de velocidade.
   drainEnergy(dt){
     const p = this.game.player;
-    p.energy = Math.max(0, p.energy - 2.2 * dt);
-    p.speed = p.energy <= 0 ? p.baseSpeed * 0.6 : p.baseSpeed;
+    const combo = this.game.combo || 0;
+    const regenRate = 6 + Math.min(9, combo * 1.1); // combo acelera a regeneração
+    p.energy = Math.min(p.maxEnergy, p.energy + regenRate * dt);
   }
 
   rewardEnergy(amount){
     const p = this.game.player;
     p.energy = Math.min(p.maxEnergy, p.energy + amount);
+  }
+
+  // ---------------- Fluxo contínuo de inimigos (nunca deixa o mapa vazio) ----------------
+
+  /**
+   * Configura o "motor" de spawn de uma fase: sempre que o número de
+   * Devoradores vivos cair abaixo de minAlive, um novo é liberado aos poucos
+   * (nunca tudo de uma vez). A cada rampEvery segundos a pressão sobe um
+   * degrau: mais inimigos mínimos, um pouco mais de velocidade e, se houver,
+   * um novo tipo entra no time — dando ritmo sem exigir mais precisão.
+   */
+  initSpawnFlow(pool, opts = {}){
+    this.spawnPool = [...pool];
+    this.bonusTypes = opts.bonusTypes ? [...opts.bonusTypes] : [];
+    this.minAlive = opts.minAlive ?? 3;
+    this.maxMinAlive = opts.maxMinAlive ?? this.minAlive + 3;
+    this.spawnCooldown = 0.8;
+    this.rampEvery = opts.rampEvery ?? 25;
+    this.rampTimer = this.rampEvery;
+    this.speedMult = 1;
+  }
+
+  updateSpawnFlow(dt){
+    if(!this.spawnPool) return;
+
+    this.rampTimer -= dt;
+    if(this.rampTimer <= 0){
+      this.rampTimer = this.rampEvery;
+      if(this.minAlive < this.maxMinAlive) this.minAlive++;
+      this.speedMult = Math.min(1.3, this.speedMult + 0.06);
+      if(this.bonusTypes.length) this.spawnPool.push(this.bonusTypes.shift());
+      this.showMessage('Mais Devoradores se aproximam!');
+      this.game.triggerShake(2, 0.12);
+      this.game.audio.rampEvent();
+    }
+
+    this.spawnCooldown -= dt;
+    if(this.devouradores.length < this.minAlive && this.spawnCooldown <= 0){
+      const type = this.spawnPool[Math.floor(Math.random() * this.spawnPool.length)];
+      this.spawnEnemyWave([type], this.speedMult);
+      this.spawnCooldown = 0.85 + Math.random() * 0.4;
+    }
   }
 
   // ---------------- Renderização ----------------
@@ -469,6 +516,7 @@ class InterfasePhase extends PhaseBase {
     this.need = { ATP: 3, DNA: 3, Nutrientes: 3 };
     this.got = { ATP: 0, DNA: 0, Nutrientes: 0 };
     this.spawnEnemyWave(['chaser', 'hunter']);
+    this.initSpawnFlow(['chaser', 'hunter'], { minAlive: 3, maxMinAlive: 5, rampEvery: 24, bonusTypes: ['shooter'] });
 
     const defs = [
       { type: 'ATP', color: '#4c8cff', r: 8 },
@@ -482,6 +530,7 @@ class InterfasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
+    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
     this.drainEnergy(dt);
@@ -522,6 +571,7 @@ class ProfasePhase extends PhaseBase {
     super(game);
     this.total = 4;
     this.spawnEnemyWave(['chaser', 'chaser', 'hunter', 'shooter']);
+    this.initSpawnFlow(['chaser', 'hunter', 'shooter'], { minAlive: 3, maxMinAlive: 6, rampEvery: 22, bonusTypes: ['tank'] });
     this.spawnScattered(this.total, (x, y) => new Item(x, y, { type: 'chromosome', color: '#9b7bff', r: 9 }));
 
     const b = this.game.bounds;
@@ -532,6 +582,7 @@ class ProfasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
+    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
     this.drainEnergy(dt);
@@ -593,6 +644,7 @@ class MetafasePhase extends PhaseBase {
     super(game);
     this.total = 5;
     this.spawnEnemyWave(['chaser', 'hunter', 'hunter', 'shooter', 'tank']);
+    this.initSpawnFlow(['chaser', 'hunter', 'shooter', 'tank'], { minAlive: 4, maxMinAlive: 6, rampEvery: 20 });
 
     const b = this.game.bounds;
     this.plateW = 46;
@@ -618,6 +670,7 @@ class MetafasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
+    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
     this.drainEnergy(dt);
@@ -687,6 +740,7 @@ class AnafasePhase extends PhaseBase {
     this.completedPairs = 0;
     this.pairDeliveries = {};
     this.spawnEnemyWave(['chaser', 'hunter', 'shooter', 'tank', 'hunter']);
+    this.initSpawnFlow(['chaser', 'hunter', 'shooter', 'tank'], { minAlive: 4, maxMinAlive: 6, rampEvery: 16 });
     this.phaseTimeLeft = 48;
     this.phaseTimeMax = 48;
 
@@ -721,6 +775,7 @@ class AnafasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
+    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
     this.drainEnergy(dt);
@@ -782,7 +837,6 @@ class TelofasePhase extends PhaseBase {
     this.defenseDuration = 30;
     this.phaseTimeLeft = this.defenseDuration;
     this.phaseTimeMax = this.defenseDuration;
-    this.spawnTimer = 6;
     this.nucleusShieldMax = 100;
     this.drainRate = 9; // dano/seg quando um Devorador fica perto do núcleo
 
@@ -796,6 +850,7 @@ class TelofasePhase extends PhaseBase {
 
     this.spawnEnemyWave(['chaser', 'hunter', 'shooter']);
     this.spawnEnemyWave(['boss'], 1);
+    this.initSpawnFlow(['chaser', 'hunter'], { minAlive: 3, maxMinAlive: 6, rampEvery: 18, bonusTypes: ['shooter'] });
   }
 
   onPhaseTimeout(){
@@ -806,6 +861,7 @@ class TelofasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
+    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
     this.drainEnergy(dt);
@@ -826,13 +882,6 @@ class TelofasePhase extends PhaseBase {
           }
         }
       }
-    }
-
-    // ondas periódicas de reforço para manter a pressão
-    this.spawnTimer -= dt;
-    if(this.spawnTimer <= 0 && this.devouradores.length < 8){
-      this.spawnTimer = 6.5;
-      this.spawnEnemyWave([Math.random() < 0.5 ? 'chaser' : 'hunter'], 1.1);
     }
 
     if(!this.completed && !this.failed) this.updatePhaseTimer(dt);

@@ -61,4 +61,9 @@ class AudioManager {
   }
   attackMiss(){ this.tone(220, 0.06, 'triangle', 0.04); }
   shoot(){ this.tone(420, 0.08, 'sawtooth', 0.05); }
+  /** Toque leve para marcar um "mini-evento" de ritmo (mais Devoradores chegando). */
+  rampEvent(){
+    this.tone(520, 0.09, 'triangle', 0.05);
+    this.tone(740, 0.09, 'triangle', 0.045, 0.08);
+  }
 }
