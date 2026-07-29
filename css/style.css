@@ -24,12 +24,13 @@ html,body{
 }
 
 #app{
+  position:relative;
   display:flex;
   flex-direction:column;
   align-items:center;
   gap:10px;
   padding:14px;
-  max-width:960px;
+  max-width:1280px;
   margin:0 auto;
   width:100%;
   height:100vh;
@@ -41,6 +42,7 @@ html,body{
 #hud{
   position:relative;
   width:100%;
+  max-width:1125px;
   background: var(--panel);
   border: 3px solid #e8ecf2;
   border-radius:4px;
@@ -51,11 +53,14 @@ html,body{
   box-shadow: 0 0 0 1px #000 inset, 0 6px 18px rgba(0,0,0,0.4);
 }
 
+#hud.hud-hidden{ display:none!important; }
+
 .hud-row{
   display:flex;
   align-items:center;
   gap:14px;
-  flex-wrap:wrap;
+  flex-wrap:nowrap;
+  min-width:0;
 }
 
 .hud-row-phase{ justify-content:space-between; }
@@ -173,6 +178,8 @@ html,body{
 .objective-text{
   font-size:13px;
   color: var(--text);
+  flex:1;
+  min-width:0;
 }
 
 /* ---------- Canvas ---------- */
@@ -246,6 +253,17 @@ html,body{
 }
 
 .overlay.hidden{ display:none; }
+
+#titleScreen{
+  justify-content:safe center;
+  overflow-y:auto;
+  padding:clamp(14px,3vh,28px);
+  gap:4px;
+}
+
+#titleScreen .btn{ margin-top:5px; }
+#titleScreen .prompt{ margin:10px 0 2px; }
+#titleScreen .controls-hint{ margin:7px 0 0; }
 
 .title{
   font-size: clamp(24px, 5vw, 40px);
@@ -519,12 +537,50 @@ body.reduced-motion *,body.reduced-motion *::before,body.reduced-motion *::after
 .mobile-controls{ display:none; pointer-events:none; }
 .touch-btn{ touch-action:none; user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
 @media (max-width: 760px), (hover:none) and (pointer:coarse){
-  #app{ padding:5px; gap:5px; }
-  #hud{ padding:6px 8px; gap:3px; border-width:2px; }
-  .hud-row{ gap:7px; }
-  .stat-label,.objective-tag,.devoradores-tag,.essence-tag{ font-size:9px; }
-  .bar{ height:10px; }
-  .objective-text{ font-size:10px; max-width:60vw; }
+  #app{ padding:3px; gap:0; justify-content:center; }
+  #hud{
+    position:absolute;
+    top:max(3px,env(safe-area-inset-top));
+    left:max(3px,env(safe-area-inset-left));
+    right:max(3px,env(safe-area-inset-right));
+    width:auto;
+    max-width:none;
+    z-index:20;
+    padding:4px 7px;
+    gap:2px;
+    border-width:1px;
+    background:rgba(3,6,11,.72);
+    box-shadow:0 3px 12px rgba(0,0,0,.35);
+    pointer-events:none;
+  }
+  .hud-row{ gap:6px; min-height:0; flex-wrap:nowrap; }
+  .stat{ min-width:0; gap:4px; }
+  .stat-label{ display:none; }
+  .stat-time{ flex:0 0 46px; }
+  .stat-time .stat-label{ display:none; }
+  .stat-value{ font-size:10px; }
+  .bar{ height:8px; border-width:1px; }
+  .hud-row-phase{ gap:6px; }
+  .phase-label{ max-width:48vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:9px; }
+  .bar-progress{ min-width:60px; }
+  .objective-tag{ display:none; }
+  .objective-text{ max-width:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:9px; }
+  .devoradores-tag,.essence-tag{ font-size:8px; white-space:nowrap; }
+  #hud .devoradores-tag{ width:auto; margin-left:auto; }
+  .hud-row-abilities{ display:none!important; }
+  #dialogueBox{
+    position:absolute;
+    left:max(6px,env(safe-area-inset-left));
+    right:max(6px,env(safe-area-inset-right));
+    bottom:max(6px,env(safe-area-inset-bottom));
+    width:auto;
+    z-index:30;
+    padding:10px 12px;
+    border-width:2px;
+    background:rgba(3,4,7,.94);
+  }
+  #dialogueText{ font-size:12px; line-height:1.35; min-height:0; }
+  .dialogue-hint{ margin-top:3px; font-size:9px; }
   .mobile-controls{ display:none; position:fixed; inset:0; z-index:25; pointer-events:none; }
   .mobile-controls.active{ display:block; }
   .mobile-joystick{ position:absolute; left:max(16px,env(safe-area-inset-left)); bottom:max(16px,env(safe-area-inset-bottom)); width:142px; height:142px; border-radius:50%; pointer-events:auto; touch-action:none; user-select:none; -webkit-user-select:none; }
@@ -559,19 +615,30 @@ body.reduced-motion *,body.reduced-motion *::before,body.reduced-motion *::after
 
 @media (orientation:landscape) and (max-height:600px){
   #app{ padding:3px 6px; gap:3px; }
-  #hud{ padding:4px 8px; gap:2px; border-width:1px; }
-  .hud-row{ flex-wrap:nowrap; gap:8px; min-height:0; }
-  .hud-row-phase{ display:none; }
-  #hud .hud-row:nth-child(3){ position:absolute; left:2px; top:calc(100% + 5px); z-index:6; width:auto; padding:3px 7px; border-radius:4px; background:rgba(3,6,11,.68); pointer-events:none; }
-  .objective-tag,.devoradores-tag,.essence-tag{ font-size:8px; }
-  .objective-text{ max-width:46vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:9px; }
-  .hud-row-abilities{ position:absolute; right:2px; top:calc(100% + 5px); z-index:6; padding:3px; border-radius:4px; background:rgba(3,6,11,.65); }
+  #hud{ padding:3px 7px; gap:1px; }
+  .hud-row-phase{ display:flex; }
+  #hud .hud-row:nth-child(3){ display:flex; }
+  .objective-text{ max-width:55vw; }
   .mobile-joystick{ width:128px; height:128px; bottom:max(8px,env(safe-area-inset-bottom)); }
   .joystick-knob{ left:35px; top:35px; }
   .mobile-actions{ bottom:max(5px,env(safe-area-inset-bottom)); transform:scale(.88); transform-origin:right bottom; }
   .touch-attack{ width:72px; height:72px; }
   .overlay{ padding:8px 14px; }
   .subtitle{ margin-bottom:4px; line-height:1.3; }
+  #titleScreen{
+    justify-content:flex-start;
+    gap:2px;
+    padding:8px 14px;
+  }
+  #titleScreen .title{ font-size:24px; margin-bottom:0; }
+  #titleScreen .subtitle,
+  #titleScreen .controls-hint{ display:none; }
+  #titleScreen .btn{
+    min-height:36px;
+    margin-top:3px;
+    padding:7px 14px;
+  }
+  #titleScreen .prompt{ margin:5px 0 0; font-size:11px; }
 }
 
 /* ---------- Responsive ---------- */

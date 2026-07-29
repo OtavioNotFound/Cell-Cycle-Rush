@@ -561,16 +561,22 @@ class Game {
     const viewportWidth = document.documentElement?.clientWidth || window.innerWidth || 900;
     const viewportHeight = window.visualViewport?.height || window.innerHeight || 700;
     const appWidth = this.dom.app?.clientWidth || viewportWidth;
-    const hudHeight = this.dom.hud.offsetHeight || this.dom.hud.getBoundingClientRect?.().height || 0;
+    const touchDevice = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+    const mobileLayout = viewportWidth <= 760 || touchDevice;
+    const hudHeight = mobileLayout
+      ? 0
+      : this.dom.hud.offsetHeight || this.dom.hud.getBoundingClientRect?.().height || 0;
     const dialogueVisible = this.dom.dialogueBox && !this.dom.dialogueBox.classList.contains('hidden');
-    const dialogueHeight = dialogueVisible
+    const dialogueHeight = !mobileLayout && dialogueVisible
       ? (this.dom.dialogueBox.offsetHeight || this.dom.dialogueBox.getBoundingClientRect?.().height || 0)
       : 0;
-    const horizontalPadding = viewportWidth <= 760 ? 10 : 28;
-    const verticalReserve = viewportWidth <= 760 ? 14 : 28;
-    const availableWidth = Math.max(160, Math.min(900, appWidth - horizontalPadding));
+    const horizontalPadding = mobileLayout ? 6 : 28;
+    const verticalReserve = mobileLayout ? 6 : 28;
+    const maxCanvasWidth = mobileLayout ? 900 : 1125;
+    const maxScale = mobileLayout ? 1 : 1.25;
+    const availableWidth = Math.max(160, Math.min(maxCanvasWidth, appWidth - horizontalPadding));
     const availableHeight = Math.max(100, viewportHeight - hudHeight - dialogueHeight - verticalReserve);
-    const scale = Math.max(.18, Math.min(1, availableWidth / 900, availableHeight / 560));
+    const scale = Math.max(.18, Math.min(maxScale, availableWidth / 900, availableHeight / 560));
     const width = Math.floor(900 * scale);
     const height = Math.floor(560 * scale);
     const signature = `${viewportWidth}:${viewportHeight}:${Math.round(hudHeight)}:${Math.round(dialogueHeight)}:${width}:${height}`;
@@ -578,6 +584,14 @@ class Game {
     this.layoutSignature = signature;
     this.dom.canvasWrap.style.width = `${width}px`;
     this.dom.canvasWrap.style.height = `${height}px`;
+  }
+
+  updateChromeVisibility(){
+    const hudStates = new Set([
+      'playing', 'paused', 'dialogue', 'unlock', 'event',
+      'phaseTransition', 'endingCinematic'
+    ]);
+    this.dom.hud?.classList.toggle('hud-hidden', !hudStates.has(this.state));
   }
 
   chooseDifficulty(mode){
@@ -1451,6 +1465,7 @@ class Game {
     const frozen = performance.now() < this.hitStopUntil;
     const dt = frozen ? 0 : rawDt;
     this.time += dt;
+    this.updateChromeVisibility();
     if(this.dom.mobileControls) this.dom.mobileControls.classList.toggle('active', this.state === 'playing');
     if(ts >= this.nextLayoutCheck){
       this.nextLayoutCheck = ts + 250;
