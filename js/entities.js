@@ -12,7 +12,10 @@ class Player {
     this.maxHealth = 100;
     this.energy = 100;
     this.maxEnergy = 100;
+    this.damageMultiplier = 1;
+    this.incomingDamageMultiplier = 1;
     this.invulnUntil = 0;
+    this.invulnDurationMs = 800;
     this.carrying = null;
     this.attackCooldownUntil = 0;
     this.attackFlash = 0; // 0..1, usado para animar o pulso de ataque
@@ -64,9 +67,11 @@ class Player {
 
   takeDamage(amount, now){
     if(now < this.invulnUntil) return false;
+    amount = Math.max(1, Math.round(amount * this.incomingDamageMultiplier));
     this.health = Math.max(0, this.health - amount);
-    this.invulnUntil = now + 800;
+    this.invulnUntil = now + this.invulnDurationMs;
     this.hurtFlash = 1;
+    if(this.onDamage) this.onDamage(amount, this.health);
     return true;
   }
 }
@@ -81,17 +86,18 @@ class Player {
  *  - 'boss'    : mini-chefe da Telófase, vida alta, dispara e persegue os núcleos
  */
 class Devorador {
-  constructor(x, y, type = 'chaser'){
+  constructor(x, y, type = 'chaser', random = Math.random){
+    this.random = random;
     this.x = x;
     this.y = y;
     this.type = type;
-    this.wobble = Math.random() * Math.PI * 2;
+    this.wobble = this.random() * Math.PI * 2;
     this.patrolTarget = null;
-    this.shootTimer = 1.6 + Math.random();
+    this.shootTimer = 1.6 + this.random();
     this.telegraph = 0; // 0..1 — sobe pouco antes do disparo, usado como aviso visual
     this.hitFlash = 0;
     this.knockX = 0; this.knockY = 0; // impulso de recuo ao levar dano
-    this.circleDir = Math.random() < 0.5 ? 1 : -1; // sentido em que este tipo "cerca" o jogador
+    this.circleDir = this.random() < 0.5 ? 1 : -1; // sentido em que este tipo "cerca" o jogador
 
     // atiradores mantêm mais distância e são um pouco mais lentos: o desafio deve
     // vir de se posicionar bem, não de fugir de uma chuva de projéteis encostado neles.
@@ -161,7 +167,7 @@ class Devorador {
       }
       if(this.shootTimer <= 0){
         // recarga mais longa: menos projéteis na tela, cada um mais fácil de ler
-        this.shootTimer = this.type === 'boss' ? (1.7 + Math.random() * 0.7) : (2.5 + Math.random() * 1.1);
+        this.shootTimer = this.type === 'boss' ? (1.7 + this.random() * 0.7) : (2.5 + this.random() * 1.1);
         this.telegraph = 0;
         if(onShoot) onShoot(this);
       }

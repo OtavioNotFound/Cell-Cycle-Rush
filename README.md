@@ -1,4 +1,4 @@
-# Cell Cycle Rush
+# Meiose Reload
 
 Jogo 100% web (HTML + CSS + JavaScript puro, sem bibliotecas externas) sobre a última
 célula saudável de um organismo tentando completar a mitose antes que os **Devoradores**
@@ -43,7 +43,7 @@ impacto, explosão ao morrer e "wobble" de animação).
 ## Estrutura do projeto
 
 ```
-cell-cycle-rush/
+meiose-reload/
 ├── index.html          # estrutura da página (HUD, canvas, diálogo, telas)
 ├── css/
 │   └── style.css        # tema visual escuro, inspirado em Undertale (HUD em caixas)

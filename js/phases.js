@@ -23,6 +23,7 @@ class PhaseBase {
   get name(){ return ''; }
   get objective(){ return ''; }
   get progress(){ return 0; }
+  get guardianAlive(){ return this.devouradores.some(d => d.type === 'boss'); }
 
   // ---------------- Devoradores ----------------
 
@@ -35,8 +36,8 @@ class PhaseBase {
       const minFromSameType = type === 'shooter' ? 260 : 60;
       let x, y, tries = 0;
       do {
-        x = b.margin + Math.random() * (b.w - b.margin * 2);
-        y = b.margin + Math.random() * (b.h - b.margin * 2);
+        x = b.margin + this.game.random() * (b.w - b.margin * 2);
+        y = b.margin + this.game.random() * (b.h - b.margin * 2);
         tries++;
       } while(
         (Math.hypot(x - player.x, y - player.y) < 170 ||
@@ -44,7 +45,14 @@ class PhaseBase {
         && tries < 25
       );
 
-      const dev = new Devorador(x, y, type);
+      const dev = new Devorador(x, y, type, () => this.game.random());
+      // A dificuldade acompanha as evoluções da tentativa em degraus suaves.
+      const scale = this.game.getEnemyScale();
+      dev.maxHp = Math.round(dev.maxHp * scale.hp);
+      dev.hp = dev.maxHp;
+      dev.contactDamage = Math.round(dev.contactDamage * scale.damage);
+      dev.baseSpeed *= scale.speed;
+      dev.speed *= scale.speed;
       dev.baseSpeed *= speedMult;
       dev.speed = dev.baseSpeed;
       this.devouradores.push(dev);
@@ -54,8 +62,19 @@ class PhaseBase {
   spawnScattered(count, factory){
     const b = this.game.bounds;
     for(let i = 0; i < count; i++){
-      const x = b.margin + Math.random() * (b.w - b.margin * 2);
-      const y = b.margin + Math.random() * (b.h - b.margin * 2);
+      let x, y, tries = 0;
+      do{
+        x = b.margin + this.game.random() * (b.w - b.margin * 2);
+        y = b.margin + this.game.random() * (b.h - b.margin * 2);
+        tries++;
+      }while(
+        tries < 30 &&
+        (
+          Math.hypot(x - this.game.player.x, y - this.game.player.y) < 85 ||
+          this.devouradores.some(d => Math.hypot(x - d.x, y - d.y) < d.r + 35) ||
+          this.items.some(item => Math.hypot(x - item.x, y - item.y) < item.r + 24)
+        )
+      );
       this.items.push(factory(x, y, i));
     }
   }
@@ -71,10 +90,12 @@ class PhaseBase {
 
   spawnProjectileFrom(dev){
     const player = this.game.player;
+    const enemyScale = this.game.getEnemyScale();
+    const projectileSpeedMultiplier = this.game.difficulty === 'soulslike' ? 1.07 : 1;
     const proj = new Projectile(dev.x, dev.y, player.x, player.y, {
-      damage: dev.type === 'boss' ? 14 : 9,
+      damage: Math.round((dev.type === 'boss' ? 14 : 9) * enemyScale.damage),
       color: dev.type === 'boss' ? '#ffb057' : '#ff6b81',
-      speed: dev.type === 'boss' ? 210 : 165,   // mais lento: dá tempo de reagir
+      speed: (dev.type === 'boss' ? 210 : 165) * projectileSpeedMultiplier,
       r: dev.type === 'boss' ? 8 : 7            // maior: mais fácil de ver e desviar
     });
     this.projectiles.push(proj);
@@ -162,7 +183,7 @@ class PhaseBase {
 
   spawnPlayerProjectile(x, y, targetX, targetY, opts = {}){
     const proj = new Projectile(x, y, targetX, targetY, Object.assign({
-      speed: 460, damage: 18, r: 6, color: '#8fe3ff', pierce: 1, friendly: true
+      speed: 460, damage: Math.round(28 * this.game.player.damageMultiplier), r: 6, color: '#8fe3ff', pierce: 1, friendly: true
     }, opts));
     this.playerProjectiles.push(proj);
   }
@@ -254,6 +275,7 @@ class PhaseBase {
       if(it.state === 'idle' && Math.hypot(p.x - it.x, p.y - it.y) < p.r + it.r){
         it.state = 'carried';
         p.carrying = it;
+        this.game.recordInteraction(it.type);
         this.game.audio.collect();
         this.game.spawnParticles(it.x, it.y, it.color, 6, { life: 0.3, speed: 70 });
         return;
@@ -307,8 +329,8 @@ class PhaseBase {
   /** Devoradores derrotados têm uma chance de soltar um pequeno orbe de vida. */
   maybeDropHealthOrb(d){
     if(this.game.player.health >= this.game.player.maxHealth) return; // não polui o chão à toa
-    const chance = d.type === 'boss' ? 1 : 0.16;
-    if(Math.random() > chance) return;
+    const chance = d.type === 'boss' ? 1 : (this.game.difficulty === 'soulslike' ? 0.10 : 0.16);
+    if(this.game.random() > chance) return;
     this.items.push(new Item(d.x, d.y, {
       type: 'vida', color: '#4ade80', r: d.type === 'boss' ? 11 : 8
     }));
@@ -325,6 +347,7 @@ class PhaseBase {
       if(it.type !== 'core' || it.state !== 'idle') return true;
       if(Math.hypot(p.x - it.x, p.y - it.y) < p.r + it.r){
         it.state = 'delivered';
+        this.game.recordInteraction(it.type);
         this.game.stats.collectibles++;
         this.game.audio.collect();
         this.game.spawnParticles(it.x, it.y, '#ffe66d', 12, { life: 0.5, speed: 100, glow: true });
@@ -342,6 +365,7 @@ class PhaseBase {
       if(it.type !== 'vida' || it.state !== 'idle') return true;
       if(Math.hypot(p.x - it.x, p.y - it.y) < p.r + it.r){
         const amount = it.r > 9 ? 24 : 14;
+        this.game.recordInteraction(it.type);
         p.health = Math.min(p.maxHealth, p.health + amount);
         this.game.audio.heal();
         this.game.spawnParticles(it.x, it.y, '#4ade80', 8, { life: 0.4, speed: 80 });
@@ -392,12 +416,25 @@ class PhaseBase {
   initSpawnFlow(pool, opts = {}){
     this.spawnPool = [...pool];
     this.bonusTypes = opts.bonusTypes ? [...opts.bonusTypes] : [];
-    this.minAlive = opts.minAlive ?? 3;
-    this.maxMinAlive = opts.maxMinAlive ?? this.minAlive + 3;
+    const adaptationTier = this.game.getEnemyScale().tier;
+    const difficultyBonus = this.game.difficulty === 'soulslike' ? 1 : 0;
+    const pressureBonus = Math.min(3, adaptationTier) + difficultyBonus;
+    this.minAlive = (opts.minAlive ?? 3) + pressureBonus;
+    this.maxMinAlive = (opts.maxMinAlive ?? this.minAlive + 3) + pressureBonus;
     this.spawnCooldown = 0.8;
     this.rampEvery = opts.rampEvery ?? 25;
     this.rampTimer = this.rampEvery;
     this.speedMult = 1;
+  }
+
+  spawnSoulsGuardian(name, hpMultiplier = 1){
+    if(this.game.difficulty !== 'soulslike') return;
+    this.spawnEnemyWave(['boss'], 1);
+    const guardian = this.devouradores[this.devouradores.length - 1];
+    guardian.bossName = name;
+    guardian.maxHp = Math.round(guardian.maxHp * hpMultiplier);
+    guardian.hp = guardian.maxHp;
+    guardian.contactDamage = Math.round(guardian.contactDamage * 1.12);
   }
 
   updateSpawnFlow(dt){
@@ -416,18 +453,18 @@ class PhaseBase {
 
     this.spawnCooldown -= dt;
     if(this.devouradores.length < this.minAlive && this.spawnCooldown <= 0){
-      let type = this.spawnPool[Math.floor(Math.random() * this.spawnPool.length)];
+      let type = this.spawnPool[Math.floor(this.game.random() * this.spawnPool.length)];
       // no máximo 2 atiradores vivos ao mesmo tempo: o desafio deve vir de
       // como o jogador se posiciona, não de uma saraivada de vários de uma vez.
       const maxShooters = 2;
       if(type === 'shooter' && this.devouradores.filter(d => d.type === 'shooter').length >= maxShooters){
         const alt = this.spawnPool.filter(t => t !== 'shooter');
-        type = alt.length ? alt[Math.floor(Math.random() * alt.length)] : null;
+        type = alt.length ? alt[Math.floor(this.game.random() * alt.length)] : null;
       }
       if(type){
         this.spawnEnemyWave([type], this.speedMult);
       }
-      this.spawnCooldown = 0.85 + Math.random() * 0.4;
+      this.spawnCooldown = 0.85 + this.game.random() * 0.4;
     }
   }
 
@@ -734,6 +771,7 @@ class InterfasePhase extends PhaseBase {
     this.need = { ATP: 3, DNA: 3, Nutrientes: 3 };
     this.got = { ATP: 0, DNA: 0, Nutrientes: 0 };
     this.spawnEnemyWave(['chaser', 'hunter']);
+    this.spawnSoulsGuardian('PARASITA METABÓLICO', .85);
     this.initSpawnFlow(['chaser', 'hunter'], { minAlive: 3, maxMinAlive: 5, rampEvery: 24, bonusTypes: ['shooter'] });
 
     const defs = [
@@ -748,6 +786,7 @@ class InterfasePhase extends PhaseBase {
   }
 
   update(dt){
+    if(this.completed) return;
     this.updateDevouradores(dt);
     this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
@@ -771,7 +810,7 @@ class InterfasePhase extends PhaseBase {
     }
 
     this.clampPlayer();
-    if(this.got.ATP >= this.need.ATP && this.got.DNA >= this.need.DNA && this.got.Nutrientes >= this.need.Nutrientes){
+    if(this.got.ATP >= this.need.ATP && this.got.DNA >= this.need.DNA && this.got.Nutrientes >= this.need.Nutrientes && !this.guardianAlive){
       this.completed = true;
     }
   }
@@ -793,6 +832,7 @@ class ProfasePhase extends PhaseBase {
     super(game);
     this.total = 4;
     this.spawnEnemyWave(['chaser', 'chaser', 'hunter', 'shooter']);
+    this.spawnSoulsGuardian('EMARANHADOR', .95);
     this.initSpawnFlow(['chaser', 'hunter', 'shooter'], { minAlive: 3, maxMinAlive: 6, rampEvery: 22, bonusTypes: ['tank'] });
     this.spawnScattered(this.total, (x, y) => new Item(x, y, { type: 'chromosome', color: '#9b7bff', r: 9 }));
     this.spawnScattered(1, (x, y) => new Item(x, y, { type: 'core', color: '#ffe66d', r: 8 }));
@@ -829,7 +869,7 @@ class ProfasePhase extends PhaseBase {
     }
 
     this.clampPlayer();
-    if(this.zones[0].filled >= this.total) this.completed = true;
+    if(this.zones[0].filled >= this.total && !this.guardianAlive) this.completed = true;
   }
 
   get progress(){ return this.zones[0].filled / this.total; }
@@ -851,6 +891,7 @@ class MetafasePhase extends PhaseBase {
     this.total = 5;
     this.slotColors = ['#9b7bff', '#54d6ff', '#ffb84d', '#ff6bcb', '#6bffb0'];
     this.spawnEnemyWave(['chaser', 'hunter', 'hunter', 'shooter', 'tank']);
+    this.spawnSoulsGuardian('DESALINHADOR', 1.05);
     this.initSpawnFlow(['chaser', 'hunter', 'shooter', 'tank'], { minAlive: 4, maxMinAlive: 6, rampEvery: 20 });
 
     const b = this.game.bounds;
@@ -935,7 +976,7 @@ class MetafasePhase extends PhaseBase {
     }
 
     this.clampPlayer();
-    if(z.filled >= this.total) this.completed = true;
+    if(z.filled >= this.total && !this.guardianAlive) this.completed = true;
   }
 
   render(ctx){
@@ -1013,9 +1054,11 @@ class AnafasePhase extends PhaseBase {
     this.completedPairs = 0;
     this.pairDeliveries = {};
     this.spawnEnemyWave(['chaser', 'hunter', 'shooter', 'tank', 'hunter']);
+    this.spawnSoulsGuardian('RUPTOR DO FUSO', 1.15);
     this.initSpawnFlow(['chaser', 'hunter', 'shooter', 'tank'], { minAlive: 4, maxMinAlive: 6, rampEvery: 16 });
-    this.phaseTimeLeft = 48;
-    this.phaseTimeMax = 48;
+    // Mais espaço para entender os pares, combater e corrigir um engano.
+    this.phaseTimeLeft = 90;
+    this.phaseTimeMax = 90;
 
     const b = this.game.bounds;
     const leftColor = '#4ade80', rightColor = '#4c8cff';
@@ -1030,7 +1073,7 @@ class AnafasePhase extends PhaseBase {
     // não há mais adivinhação de qual metade combina com qual polo.
     for(let i = 0; i < this.pairs; i++){
       this.pairDeliveries[i] = [];
-      const cx = b.w / 2 + (Math.random() * 40 - 20);
+      const cx = b.w / 2 + (this.game.random() * 40 - 20);
       const cy = b.margin + 40 + i * ((b.h - b.margin * 2 - 40) / this.pairs);
       this.items.push(new Item(cx - 8, cy, { type: 'chromatid', pairId: i, r: 8, color: leftColor }));
       this.items.push(new Item(cx + 8, cy, { type: 'chromatid', pairId: i, r: 8, color: rightColor }));
@@ -1070,6 +1113,20 @@ class AnafasePhase extends PhaseBase {
       for(const z of this.zones){
         if(Math.hypot(p.x - z.x, p.y - z.y) < z.r){
           const it = p.carrying;
+          const expectedSide = it.color === '#4ade80' ? 'left' : 'right';
+          if(z.side !== expectedSide){
+            this.showMessage('Polo incorreto! Combine a cor da cromátide com a do polo.');
+            this.game.stats.errors++;
+            p.takeDamage(8, performance.now());
+            this.game.audio.fail();
+            this.game.flashDamage();
+            it.state = 'idle';
+            it.x = this.game.bounds.w / 2 + (expectedSide === 'left' ? -10 : 10);
+            it.y = this.game.bounds.h / 2 + (it.pairId - (this.pairs - 1) / 2) * 55;
+            p.carrying = null;
+            if(p.health <= 0) this.game.onDefeat();
+            break;
+          }
           this.pairDeliveries[it.pairId].push(z.side);
           it.state = 'delivered';
           z.filled++;
@@ -1083,6 +1140,21 @@ class AnafasePhase extends PhaseBase {
               p.takeDamage(12, performance.now());
               this.game.audio.fail();
               this.game.flashDamage();
+              // Antes, as duas cromátides ficavam marcadas como entregues para
+              // sempre e o par jamais podia ser concluído. Agora o par volta ao
+              // centro para que o jogador consiga corrigir a separação.
+              const pairItems = this.items.filter(item => item.type === 'chromatid' && item.pairId === it.pairId);
+              for(const pairItem of pairItems){
+                pairItem.state = 'idle';
+                const sideOffset = pairItem.color === '#4ade80' ? -10 : 10;
+                pairItem.x = this.game.bounds.w / 2 + sideOffset;
+                pairItem.y = this.game.bounds.h / 2 + (it.pairId - (this.pairs - 1) / 2) * 55;
+              }
+              for(const usedSide of deliveries){
+                const usedZone = this.zones.find(zone => zone.side === usedSide);
+                if(usedZone) usedZone.filled = Math.max(0, usedZone.filled - 1);
+              }
+              this.pairDeliveries[it.pairId] = [];
               if(p.health <= 0) this.game.onDefeat();
             } else {
               this.completedPairs++;
@@ -1099,7 +1171,7 @@ class AnafasePhase extends PhaseBase {
     }
 
     this.clampPlayer();
-    if(this.completedPairs >= this.pairs){
+    if(this.completedPairs >= this.pairs && !this.guardianAlive){
       this.completed = true;
       this.phaseTimeLeft = null;
     }
@@ -1144,30 +1216,43 @@ class TelofasePhase extends PhaseBase {
   /**
    * Derrotar o Núcleo Devorador (o boss desta fase) é o clímax da campanha:
    * ele para de mandar reforços (spawnPool = null) e, na primeira vez, concede
-   * a Sobrecarga Mitótica na hora — o jogador ainda tem tempo de fase sobrando
-   * para realmente usá-la, em vez de recebê-la só na tela de vitória.
+   * a Sobrecarga Mitótica. A fase termina logo após essa tela, sem obrigar o
+   * jogador a esperar o cronômetro restante.
    */
   onDevouradorDefeated(d){
     super.onDevouradorDefeated(d);
     if(d.type === 'boss' && !this.bossDefeated){
       this.bossDefeated = true;
       this.spawnPool = null; // encerra o fluxo contínuo: nenhum Devorador novo a partir daqui
-      this.showMessage('Núcleo Devorador destruído! Proteja os núcleos até o fim.');
+      this.phaseTimeLeft = null;
+      this.projectiles = [];
+      this.showMessage('Núcleo Devorador destruído! A divisão está segura.');
       const p = this.game.player;
       if(p && !p.abilities.overload){
         p.abilities.overload = true;
-        this.game.showUnlockScreen(ABILITY_UNLOCKS[4], () => { this.game.state = 'playing'; });
+        this.game.showUnlockScreen(ABILITY_UNLOCKS[4], () => {
+          this.completed = true;
+          this.game.state = 'playing';
+        });
+      }else{
+        this.completed = true;
       }
     }
   }
 
   onPhaseTimeout(){
-    if(this.zones.every(z => z.shield > 0)){
+    if(this.bossDefeated && this.zones.every(z => z.shield > 0)){
       this.completed = true;
+    }else if(!this.bossDefeated){
+      // Sobreviver ao cronômetro não substitui o objetivo principal.
+      this.phaseTimeLeft = 10;
+      this.showMessage('O Núcleo Devorador ainda precisa ser derrotado!');
+      this.game.audio.rampEvent();
     }
   }
 
   update(dt){
+    if(this.completed) return;
     this.updateDevouradores(dt);
     this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);

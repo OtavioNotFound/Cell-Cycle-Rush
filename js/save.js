@@ -12,7 +12,18 @@ const SaveData = {
   _defaults(){
     return {
       beaten: false,
-      unlockedAbilities: { dash: false, shot: false, pulse: false, overload: false }
+      unlockedAbilities: { dash: false, shot: false, pulse: false, overload: false },
+      achievements: {},
+      totalKills: 0,
+      endings: {},
+      achievementsByMode: { normal: {}, soulslike: {} },
+      totalKillsByMode: { normal: 0, soulslike: 0 },
+      endingsByMode: { normal: {}, soulslike: {} },
+      permanentProgress: {
+        essence: 0,
+        totalUpgrades: 0,
+        levels: { health: 0, damage: 0, speed: 0, energy: 0 }
+      }
     };
   },
 
@@ -25,6 +36,22 @@ const SaveData = {
         if(parsed && typeof parsed === 'object'){
           data.beaten = !!parsed.beaten;
           Object.assign(data.unlockedAbilities, parsed.unlockedAbilities || {});
+          Object.assign(data.achievements, parsed.achievements || {});
+          data.totalKills = Number(parsed.totalKills) || 0;
+          Object.assign(data.endings, parsed.endings || {});
+          Object.assign(data.achievementsByMode.normal, parsed.achievementsByMode?.normal || parsed.achievements || {});
+          Object.assign(data.achievementsByMode.soulslike, parsed.achievementsByMode?.soulslike || {});
+          data.totalKillsByMode.normal = Number(parsed.totalKillsByMode?.normal ?? parsed.totalKills) || 0;
+          data.totalKillsByMode.soulslike = Number(parsed.totalKillsByMode?.soulslike) || 0;
+          Object.assign(data.endingsByMode.normal, parsed.endingsByMode?.normal || parsed.endings || {});
+          Object.assign(data.endingsByMode.soulslike, parsed.endingsByMode?.soulslike || {});
+          if(parsed.permanentProgress && typeof parsed.permanentProgress === 'object'){
+            data.permanentProgress.essence = Number(parsed.permanentProgress.essence) || 0;
+            data.permanentProgress.totalUpgrades = Number(parsed.permanentProgress.totalUpgrades) || 0;
+            Object.keys(data.permanentProgress.levels).forEach(key => {
+              data.permanentProgress.levels[key] = Number(parsed.permanentProgress.levels?.[key]) || 0;
+            });
+          }
         }
       } else if(localStorage.getItem(LEGACY_BEATEN_KEY) === '1'){
         // migra o save antigo: só sabíamos que o jogador tinha vencido uma vez

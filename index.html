@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cell Cycle Rush</title>
+<title>Meiose Reload</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -34,6 +34,7 @@
       <span class="objective-tag">OBJETIVO</span>
       <span id="objectiveText" class="objective-text">—</span>
       <span class="devoradores-tag">DEVORADORES: <span id="devouradoresCount">0</span></span>
+      <span class="essence-tag">ESSÊNCIA: <span id="essenceCount">0</span></span>
     </div>
     <div class="hud-row hud-row-abilities" id="abilityRow" style="display:none;">
       <span class="objective-tag">ADAPTAÇÕES</span>
@@ -50,14 +51,92 @@
 
     <!-- Title screen -->
     <div id="titleScreen" class="overlay">
-      <h1 class="title">CELL CYCLE RUSH</h1>
+      <h1 class="title">MEIOSE RELOAD</h1>
       <p class="subtitle">A última célula precisa se dividir para salvar o organismo.</p>
       <button id="newGameBtn" class="btn">Novo Jogo</button>
       <button id="ngPlusBtn" class="btn ngplus-btn hidden">NG+ — Começar com todas as Adaptações</button>
+      <button id="achievementsBtn" class="btn">Conquistas</button>
+      <button id="codexBtn" class="btn">Arquivo Celular</button>
+      <button id="labBtn" class="btn">Modo Laboratório</button>
+      <button id="settingsBtn" class="btn">Acessibilidade</button>
       <p class="prompt">Pressione ENTER para começar</p>
       <p class="controls-hint">Movimento: WASD ou Setas &nbsp;•&nbsp; Ataque: ESPAÇO, F ou clique</p>
+      <p class="controls-hint">Pausa e evolução: ESC</p>
       <p class="controls-hint">Novas adaptações são desbloqueadas ao longo da campanha</p>
       <p class="controls-hint">Seu desempenho na campanha decide como ela termina</p>
+    </div>
+
+    <div id="achievementsScreen" class="overlay achievements-overlay hidden">
+      <div class="achievements-header">
+        <div><p class="unlock-tag">ARQUIVO CELULAR</p><h2>CONQUISTAS</h2><p id="achievementSummary"></p></div>
+        <button id="closeAchievementsBtn" class="btn">Voltar</button>
+      </div>
+      <div id="achievementFilters" class="achievement-filters"></div>
+      <div id="achievementList" class="achievement-list"></div>
+    </div>
+
+    <div id="difficultyScreen" class="overlay difficulty-overlay hidden">
+      <p class="unlock-tag">NOVA CAMPANHA</p>
+      <h2>ESCOLHA A DIFICULDADE</h2>
+      <label class="seed-field">SEMENTE DA CAMPANHA
+        <input id="seedInput" maxlength="24" placeholder="ALEATÓRIA">
+      </label>
+      <div class="difficulty-list">
+        <button id="normalModeBtn" class="difficulty-card">
+          <strong>NORMAL</strong>
+          <span>Balanceamento atual</span>
+          <small>Essência e atributos permanecem entre partidas e continuam no NG+.</small>
+        </button>
+        <button id="soulsModeBtn" class="difficulty-card difficulty-souls">
+          <strong>SOULSLIKE ROGUELIKE</strong>
+          <span>Mais inimigos, mais vida e mais dano</span>
+          <small>Ao morrer, você perde toda a Essência e todas as evoluções da tentativa.</small>
+        </button>
+      </div>
+      <button id="difficultyBackBtn" class="btn">Voltar</button>
+    </div>
+
+    <div id="pauseScreen" class="overlay pause-overlay hidden">
+      <p class="unlock-tag">NÚCLEO CELULAR</p>
+      <h2 class="pause-title">JOGO PAUSADO</h2>
+      <p class="pause-essence">Essência disponível: <strong id="pauseEssence">0</strong></p>
+      <p id="pauseProgressRule" class="pause-warning pause-permanent">A Essência e estas evoluções são permanentes e continuam no NG+.</p>
+      <div id="upgradeList" class="upgrade-list"></div>
+      <p id="enemyScaleText" class="enemy-scale-text"></p>
+      <button id="resumeBtn" class="btn">Continuar</button>
+      <button id="pauseTitleBtn" class="btn pause-danger">Voltar ao menu principal</button>
+    </div>
+
+    <div id="eventScreen" class="overlay event-overlay hidden">
+      <p id="eventTag" class="unlock-tag">EVENTO CELULAR</p>
+      <h2 id="eventTitle">ADAPTAÇÃO</h2>
+      <p id="eventDescription" class="subtitle"></p>
+      <div id="eventChoices" class="event-choices"></div>
+    </div>
+
+    <div id="codexScreen" class="overlay info-overlay hidden">
+      <div class="info-header"><div><p class="unlock-tag">ENCICLOPÉDIA</p><h2>ARQUIVO CELULAR</h2></div><button id="codexCloseBtn" class="btn">Voltar</button></div>
+      <div id="codexList" class="codex-list"></div>
+    </div>
+
+    <div id="labScreen" class="overlay info-overlay hidden">
+      <div class="info-header"><div><p class="unlock-tag">MODO EDUCATIVO</p><h2>LABORATÓRIO DA MITOSE</h2></div><button id="labCloseBtn" class="btn">Voltar</button></div>
+      <div class="lab-view">
+        <div id="labCell" class="lab-cell"><span id="labNucleus"></span></div>
+        <h3 id="labPhaseName"></h3>
+        <p id="labPhaseText"></p>
+        <div><button id="labPrevBtn" class="btn">◀ Anterior</button><button id="labNextBtn" class="btn">Próxima ▶</button></div>
+      </div>
+    </div>
+
+    <div id="settingsScreen" class="overlay info-overlay hidden">
+      <div class="info-header"><div><p class="unlock-tag">OPÇÕES</p><h2>ACESSIBILIDADE</h2></div><button id="settingsCloseBtn" class="btn">Voltar</button></div>
+      <div class="settings-list">
+        <label><input id="reducedMotionToggle" type="checkbox"> Reduzir animações e tremores</label>
+        <label><input id="largeTextToggle" type="checkbox"> Texto ampliado</label>
+        <label><input id="colorblindToggle" type="checkbox"> Modo de alto contraste para cores</label>
+        <label>Volume <input id="volumeSlider" type="range" min="0" max="100" value="100"></label>
+      </div>
     </div>
 
     <!-- End screen -->
@@ -77,6 +156,24 @@
       <p class="prompt">[ Pressione ESPAÇO ]</p>
     </div>
   </div>
+  <div id="achievementToasts" class="achievement-toasts" aria-live="polite"></div>
+
+  <div id="mobileControls" class="mobile-controls" aria-label="Controles para celular">
+    <div class="mobile-dpad">
+      <button class="touch-btn dpad-up" data-move-key="w" aria-label="Mover para cima">▲</button>
+      <button class="touch-btn dpad-left" data-move-key="a" aria-label="Mover para esquerda">◀</button>
+      <button class="touch-btn dpad-down" data-move-key="s" aria-label="Mover para baixo">▼</button>
+      <button class="touch-btn dpad-right" data-move-key="d" aria-label="Mover para direita">▶</button>
+    </div>
+    <div class="mobile-actions">
+      <button class="touch-btn touch-small" data-mobile-action="dash">DASH</button>
+      <button class="touch-btn touch-small" data-mobile-action="shot">TIRO</button>
+      <button class="touch-btn touch-small" data-mobile-action="pulse">PULSO</button>
+      <button class="touch-btn touch-small" data-mobile-action="overload">OVER</button>
+      <button class="touch-btn touch-attack" data-mobile-action="attack">ATACAR</button>
+      <button class="touch-btn touch-pause" data-mobile-action="pause">Ⅱ</button>
+    </div>
+  </div>
 
   <!-- Dialogue box -->
   <div id="dialogueBox" class="hidden">
@@ -88,6 +185,7 @@
 
 <script src="js/audio.js"></script>
 <script src="js/save.js"></script>
+<script src="js/achievements.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/dialogue.js"></script>
 <script src="js/phases.js"></script>

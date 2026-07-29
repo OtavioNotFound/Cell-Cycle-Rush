@@ -159,17 +159,6 @@ const ENDINGS = {
     ]),
     message: '"A batalha terminou... por enquanto."'
   },
-  neutral: {
-    id: 'neutral',
-    title: 'FINAL NEUTRO — SOBREVIVÊNCIA',
-    cinematic: null,
-    lines: VICTORY_LINES.concat([
-      'Algumas células ao redor sobreviveram. Outras sofreram mutações silenciosas.',
-      'O organismo continua vivo, porém enfraquecido.',
-      'Em algum lugar daquele tecido, uma célula mutante permanece ativa. Observando.'
-    ]),
-    message: 'O organismo sobreviveu — mas nem tudo saiu ileso.'
-  },
   bad: {
     id: 'bad',
     title: 'FINAL RUIM — MUTAÇÃO',
@@ -208,9 +197,7 @@ const EXTINCTION_ENDING = {
 const ENDING_THRESHOLDS = {
   trueMaxErrors: 2,
   goodMaxDeaths: 1,
-  goodMaxErrors: 5,
-  neutralMaxDeaths: 3,
-  neutralMaxErrors: 10
+  goodMaxErrors: 5
 };
 
 /** Decide qual final mostrar ao concluir a campanha, a partir de Game.stats. */
@@ -220,6 +207,5 @@ function decideEnding(stats){
   if(perfect || allCollectibles) return ENDINGS.secret;
   if(stats.deaths === 0 && stats.errors <= ENDING_THRESHOLDS.trueMaxErrors) return ENDINGS.true;
   if(stats.deaths <= ENDING_THRESHOLDS.goodMaxDeaths && stats.errors <= ENDING_THRESHOLDS.goodMaxErrors) return ENDINGS.good;
-  if(stats.deaths <= ENDING_THRESHOLDS.neutralMaxDeaths && stats.errors <= ENDING_THRESHOLDS.neutralMaxErrors) return ENDINGS.neutral;
   return ENDINGS.bad;
 }

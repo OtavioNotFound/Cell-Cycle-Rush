@@ -5,6 +5,7 @@
 class AudioManager {
   constructor(){
     this.ctx = null;
+    this.volume = 1;
   }
 
   ensureContext(){
@@ -31,7 +32,7 @@ class AudioManager {
       gain.connect(ctx.destination);
       const start = ctx.currentTime + delay;
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(gainVal, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(Math.max(.0001, gainVal * this.volume), start + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
       osc.start(start);
       osc.stop(start + duration + 0.02);
@@ -103,5 +104,10 @@ class AudioManager {
     this.tone(660, 0.1, 'sine', 0.08, 0.1);
     this.tone(880, 0.1, 'sine', 0.08, 0.2);
     this.tone(1108, 0.22, 'sine', 0.09, 0.3);
+  }
+  achievement(){
+    this.tone(523, 0.1, 'triangle', 0.07);
+    this.tone(784, 0.16, 'triangle', 0.08, 0.09);
+    this.tone(1047, 0.24, 'sine', 0.08, 0.2);
   }
 }
