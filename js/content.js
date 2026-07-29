@@ -64,46 +64,6 @@ const VICTORY_LINES = [
   'A divisão está completa.'
 ];
 
-/**
- * Adaptações permanentes desbloqueadas ao concluir uma fase (representando a
- * "vitória sobre o boss" daquele estágio da mitose). Mapeado por índice de fase
- * (0 a 4). Fases sem entrada aqui não concedem nenhuma habilidade nova.
- */
-const ABILITY_UNLOCKS = {
-  0: {
-    key: 'dash',
-    name: 'Dash Celular',
-    flavor: '"Agora sua célula consegue escapar rapidamente do perigo."',
-    controlHint: 'Pressione SHIFT para avançar num impulso rápido, com breve invulnerabilidade.'
-  },
-  1: {
-    key: 'shot',
-    name: 'Disparo de Energia',
-    flavor: '"Sua célula aprendeu a liberar um pulso de energia à distância."',
-    controlHint: 'Pressione E para disparar um projétil que atravessa um inimigo.'
-  },
-  2: {
-    key: 'pulse',
-    name: 'Pulso Celular',
-    flavor: '"Uma onda de membrana agora pode empurrar tudo ao seu redor."',
-    controlHint: 'Pressione R para expandir uma onda que afasta os Devoradores próximos.'
-  },
-  4: {
-    key: 'overload',
-    name: 'Sobrecarga Mitótica',
-    flavor: '"No limite da divisão, sua célula libera toda a energia acumulada."',
-    controlHint: 'Pressione Q para acelerar seus movimentos e ataques por alguns segundos.'
-  }
-};
-
-/** Metadados de exibição das habilidades na barra do HUD. */
-const ABILITY_META = {
-  dash:     { label: 'DASH',   keyLabel: 'SHIFT' },
-  shot:     { label: 'TIRO',   keyLabel: 'E' },
-  pulse:    { label: 'PULSO',  keyLabel: 'R' },
-  overload: { label: 'SOBRECARGA', keyLabel: 'Q' }
-};
-
 const DEFEAT_LINES = [
   'A célula tenta resistir, mas não há mais energia.',
   'Os Devoradores fecham o cerco em silêncio.',

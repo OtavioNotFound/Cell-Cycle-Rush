@@ -9,7 +9,6 @@ class PhaseBase {
     this.game = game;
     this.devouradores = [];
     this.projectiles = [];
-    this.playerProjectiles = []; // Disparo de Energia (Boss 2)
     this.items = [];
     this.zones = [];
     this.message = '';
@@ -30,19 +29,12 @@ class PhaseBase {
     const b = this.game.bounds;
     const player = this.game.player;
     types.forEach(type => {
-      // atiradores nunca nascem perto uns dos outros (nem perto de outro atirador
-      // já em campo) — evita a "chuva de projéteis" vinda de um grupo encostado.
-      const minFromSameType = type === 'shooter' ? 260 : 60;
       let x, y, tries = 0;
       do {
         x = b.margin + Math.random() * (b.w - b.margin * 2);
         y = b.margin + Math.random() * (b.h - b.margin * 2);
         tries++;
-      } while(
-        (Math.hypot(x - player.x, y - player.y) < 170 ||
-         this.devouradores.some(d => d.type === type && Math.hypot(x - d.x, y - d.y) < minFromSameType))
-        && tries < 25
-      );
+      } while(Math.hypot(x - player.x, y - player.y) < 170 && tries < 20);
 
       const dev = new Devorador(x, y, type);
       dev.baseSpeed *= speedMult;
@@ -74,8 +66,8 @@ class PhaseBase {
     const proj = new Projectile(dev.x, dev.y, player.x, player.y, {
       damage: dev.type === 'boss' ? 14 : 9,
       color: dev.type === 'boss' ? '#ffb057' : '#ff6b81',
-      speed: dev.type === 'boss' ? 210 : 165,   // mais lento: dá tempo de reagir
-      r: dev.type === 'boss' ? 8 : 7            // maior: mais fácil de ver e desviar
+      speed: dev.type === 'boss' ? 250 : 200,
+      r: dev.type === 'boss' ? 6 : 4.5
     });
     this.projectiles.push(proj);
     this.game.audio.shoot();
@@ -112,12 +104,11 @@ class PhaseBase {
       if(dist <= range + d.r){
         hitSomething = true;
         const died = d.takeDamage(damage);
-        d.applyKnockback(px, py, 190); // impacto: o inimigo é empurrado para trás
         this.game.spawnParticles(d.x, d.y, '#ffffff', 7, { life: 0.25, speed: 110, r: 2 });
         if(died){
           this.onDevouradorDefeated(d);
         } else {
-          this.game.audio.impact();
+          this.game.audio.hit();
         }
       }
     }
@@ -125,95 +116,17 @@ class PhaseBase {
       if(d.isDead){
         const color = d.type === 'boss' ? '#ffb057' : (d.type === 'tank' ? '#b23347' : (d.type === 'hunter' ? '#ff3b4e' : '#e6465e'));
         this.game.spawnExplosion(d.x, d.y, color);
-        this.maybeDropHealthOrb(d);
         return false;
       }
       return true;
     });
-    if(hitSomething){
-      this.game.triggerHitStop(65);   // breve congelamento dá peso ao golpe
-      this.game.triggerShake(5, 0.14);
-    } else {
-      this.game.audio.attackMiss();
-    }
+    if(!hitSomething) this.game.audio.attackMiss();
   }
 
   onDevouradorDefeated(d){
     this.game.audio.success();
-    this.game.registerKill(d);
-    const combo = this.game.combo;
-    this.showMessage(d.type === 'boss' ? 'O Devorador foi contido!' : (combo >= 4 ? `Combo x${combo}!` : 'Devorador eliminado!'));
-  }
-
-  /** Remove da lista os Devoradores que morreram, com a mesma explosão/drop do ataque corpo a corpo. */
-  cleanupDeadDevouradores(){
-    this.devouradores = this.devouradores.filter(d => {
-      if(d.isDead){
-        const color = d.type === 'boss' ? '#ffb057' : (d.type === 'tank' ? '#b23347' : (d.type === 'hunter' ? '#ff3b4e' : '#e6465e'));
-        this.game.spawnExplosion(d.x, d.y, color);
-        this.maybeDropHealthOrb(d);
-        return false;
-      }
-      return true;
-    });
-  }
-
-  // ---------------- Boss 2: Disparo de Energia ----------------
-
-  spawnPlayerProjectile(x, y, targetX, targetY, opts = {}){
-    const proj = new Projectile(x, y, targetX, targetY, Object.assign({
-      speed: 460, damage: 18, r: 6, color: '#8fe3ff', pierce: 1, friendly: true
-    }, opts));
-    this.playerProjectiles.push(proj);
-  }
-
-  updatePlayerProjectiles(dt){
-    const b = this.game.bounds;
-    this.playerProjectiles.forEach(pr => pr.update(dt));
-    this.playerProjectiles = this.playerProjectiles.filter(pr => {
-      if(pr.dead) return false;
-      if(pr.x < -20 || pr.x > b.w + 20 || pr.y < -20 || pr.y > b.h + 20) return false;
-      for(const d of this.devouradores){
-        if(pr.hitIds && pr.hitIds.has(d)) continue;
-        const dist = Math.hypot(pr.x - d.x, pr.y - d.y);
-        if(dist < pr.r + d.r){
-          if(!pr.hitIds) pr.hitIds = new Set();
-          pr.hitIds.add(d);
-          const died = d.takeDamage(pr.damage);
-          d.applyKnockback(pr.x, pr.y, 110);
-          this.game.spawnParticles(d.x, d.y, pr.color, 6, { life: 0.25, speed: 90, r: 2 });
-          this.game.audio.impact();
-          pr.pierceLeft -= 1;
-          if(died) this.onDevouradorDefeated(d);
-          if(pr.pierceLeft < 0) pr.dead = true;
-          break;
-        }
-      }
-      return !pr.dead;
-    });
-    this.cleanupDeadDevouradores();
-  }
-
-  // ---------------- Boss 3: Pulso Celular ----------------
-
-  /** Empurra (e causa um dano leve em) Devoradores próximos, sem exigir mira. */
-  applyPulse(range, force, damage){
-    const p = this.game.player;
-    let hitAny = false;
-    for(const d of this.devouradores){
-      const dist = Math.hypot(p.x - d.x, p.y - d.y);
-      if(dist <= range + d.r){
-        hitAny = true;
-        if(damage > 0){
-          const died = d.takeDamage(damage);
-          if(died) this.onDevouradorDefeated(d);
-        }
-        d.applyKnockback(p.x, p.y, force);
-        this.game.spawnParticles(d.x, d.y, '#bfe9ff', 5, { life: 0.25, speed: 80, r: 2 });
-      }
-    }
-    this.cleanupDeadDevouradores();
-    if(hitAny) this.game.triggerShake(4, 0.15);
+    this.rewardEnergy(d.type === 'boss' ? 0 : 6);
+    this.showMessage(d.type === 'boss' ? 'O Devorador foi contido!' : 'Devorador eliminado!');
   }
 
   // ---------------- Colisões / itens ----------------
@@ -287,127 +200,15 @@ class PhaseBase {
     p.y = Math.max(p.r, Math.min(b.h - p.r, p.y));
   }
 
-  // A energia agora regenera sozinha (mais rápido durante um combo) — o
-  // jogador nunca precisa parar de jogar para "farmar" energia pelo mapa.
-  // Isso substitui o antigo dreno constante + penalidade de velocidade.
   drainEnergy(dt){
     const p = this.game.player;
-    const combo = this.game.combo || 0;
-    const regenRate = 6 + Math.min(9, combo * 1.1); // combo acelera a regeneração
-    p.energy = Math.min(p.maxEnergy, p.energy + regenRate * dt);
+    p.energy = Math.max(0, p.energy - 2.2 * dt);
+    p.speed = p.energy <= 0 ? p.baseSpeed * 0.6 : p.baseSpeed;
   }
 
   rewardEnergy(amount){
     const p = this.game.player;
     p.energy = Math.min(p.maxEnergy, p.energy + amount);
-  }
-
-  // ---------------- Recuperação (o jogo pune, mas também perdoa) ----------------
-
-  /** Devoradores derrotados têm uma chance de soltar um pequeno orbe de vida. */
-  maybeDropHealthOrb(d){
-    if(this.game.player.health >= this.game.player.maxHealth) return; // não polui o chão à toa
-    const chance = d.type === 'boss' ? 1 : 0.16;
-    if(Math.random() > chance) return;
-    this.items.push(new Item(d.x, d.y, {
-      type: 'vida', color: '#4ade80', r: d.type === 'boss' ? 11 : 8
-    }));
-  }
-
-  /** Orbes de vida curam na hora ao tocar — não precisam ser "carregados". */
-  updateHealthPickups(){
-    const p = this.game.player;
-    this.items = this.items.filter(it => {
-      if(it.type !== 'vida' || it.state !== 'idle') return true;
-      if(Math.hypot(p.x - it.x, p.y - it.y) < p.r + it.r){
-        const amount = it.r > 9 ? 24 : 14;
-        p.health = Math.min(p.maxHealth, p.health + amount);
-        this.game.audio.heal();
-        this.game.spawnParticles(it.x, it.y, '#4ade80', 8, { life: 0.4, speed: 80 });
-        this.showMessage('Vida recuperada!');
-        return false;
-      }
-      return true;
-    });
-  }
-
-  /**
-   * Itens ainda soltos (estado 'idle') são um alvo dos Devoradores: se um
-   * deles chegar perto, o item é empurrado para longe — o jogador precisa
-   * proteger, não só coletar. Nunca afeta itens já entregues/corretos, então
-   * não desfaz progresso conquistado, só cria uma pressão extra para agir logo.
-   */
-  protectIdleItems(message, types = null){
-    const now = performance.now();
-    const b = this.game.bounds;
-    for(const it of this.items){
-      if(it.state !== 'idle') continue;
-      if(types && !types.includes(it.type)) continue;
-      for(const d of this.devouradores){
-        if(Math.hypot(it.x - d.x, it.y - d.y) < d.r + it.r + 4){
-          if(!it.threatCooldown || now > it.threatCooldown){
-            it.threatCooldown = now + 900;
-            const ang = Math.atan2(it.y - d.y, it.x - d.x);
-            it.x = Math.max(b.margin, Math.min(b.w - b.margin, it.x + Math.cos(ang) * 70));
-            it.y = Math.max(b.margin, Math.min(b.h - b.margin, it.y + Math.sin(ang) * 70));
-            this.game.spawnParticles(it.x, it.y, it.color, 5, { life: 0.3, speed: 60 });
-            if(message) this.showMessage(message);
-          }
-          break;
-        }
-      }
-    }
-  }
-
-  // ---------------- Fluxo contínuo de inimigos (nunca deixa o mapa vazio) ----------------
-
-  /**
-   * Configura o "motor" de spawn de uma fase: sempre que o número de
-   * Devoradores vivos cair abaixo de minAlive, um novo é liberado aos poucos
-   * (nunca tudo de uma vez). A cada rampEvery segundos a pressão sobe um
-   * degrau: mais inimigos mínimos, um pouco mais de velocidade e, se houver,
-   * um novo tipo entra no time — dando ritmo sem exigir mais precisão.
-   */
-  initSpawnFlow(pool, opts = {}){
-    this.spawnPool = [...pool];
-    this.bonusTypes = opts.bonusTypes ? [...opts.bonusTypes] : [];
-    this.minAlive = opts.minAlive ?? 3;
-    this.maxMinAlive = opts.maxMinAlive ?? this.minAlive + 3;
-    this.spawnCooldown = 0.8;
-    this.rampEvery = opts.rampEvery ?? 25;
-    this.rampTimer = this.rampEvery;
-    this.speedMult = 1;
-  }
-
-  updateSpawnFlow(dt){
-    if(!this.spawnPool) return;
-
-    this.rampTimer -= dt;
-    if(this.rampTimer <= 0){
-      this.rampTimer = this.rampEvery;
-      if(this.minAlive < this.maxMinAlive) this.minAlive++;
-      this.speedMult = Math.min(1.3, this.speedMult + 0.06);
-      if(this.bonusTypes.length) this.spawnPool.push(this.bonusTypes.shift());
-      this.showMessage('Mais Devoradores se aproximam!');
-      this.game.triggerShake(2, 0.12);
-      this.game.audio.rampEvent();
-    }
-
-    this.spawnCooldown -= dt;
-    if(this.devouradores.length < this.minAlive && this.spawnCooldown <= 0){
-      let type = this.spawnPool[Math.floor(Math.random() * this.spawnPool.length)];
-      // no máximo 2 atiradores vivos ao mesmo tempo: o desafio deve vir de
-      // como o jogador se posiciona, não de uma saraivada de vários de uma vez.
-      const maxShooters = 2;
-      if(type === 'shooter' && this.devouradores.filter(d => d.type === 'shooter').length >= maxShooters){
-        const alt = this.spawnPool.filter(t => t !== 'shooter');
-        type = alt.length ? alt[Math.floor(Math.random() * alt.length)] : null;
-      }
-      if(type){
-        this.spawnEnemyWave([type], this.speedMult);
-      }
-      this.spawnCooldown = 0.85 + Math.random() * 0.4;
-    }
   }
 
   // ---------------- Renderização ----------------
@@ -527,29 +328,6 @@ class PhaseBase {
         ctx.stroke();
         // pequena barra de vida individual acima do chefe é tratada pelo Game (renderBossBar)
       }
-
-      // aviso de disparo: um anel branco cresce e pisca bem antes do tiro sair,
-      // dando ao jogador uma janela clara para se afastar ou se esquivar.
-      if((d.type === 'shooter' || d.type === 'boss') && d.telegraph > 0){
-        ctx.save();
-        ctx.globalAlpha = d.telegraph * 0.9;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(0, 0, d.r + 6 + d.telegraph * 8, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      // inimigo resistente: mostra vida acima dele para sinalizar que aguenta mais golpes
-      if(d.type === 'tank'){
-        const w = 30, h = 4, by = -d.r - 11;
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(-w / 2 - 1, by - 1, w + 2, h + 2);
-        const pct = Math.max(0, d.hp / d.maxHp);
-        ctx.fillStyle = pct > 0.35 ? '#4ade80' : '#ff4d5e';
-        ctx.fillRect(-w / 2, by, w * pct, h);
-      }
       ctx.restore();
     });
   }
@@ -572,11 +350,9 @@ class PhaseBase {
     ctx.save();
     ctx.translate(p.x, p.y);
 
-    // brilho pulsante da célula — Sobrecarga Mitótica tinge o brilho de dourado
-    const glowR = p.r * (2.4 + Math.sin(performance.now() / 600) * 0.3) * (p.isOverloaded ? 1.4 : 1);
-    const glowColor = p.hurtFlash > 0 ? `rgba(255,77,94,${0.35 * p.hurtFlash})`
-      : p.isOverloaded ? 'rgba(255,209,102,0.45)'
-      : 'rgba(143,227,199,0.22)';
+    // brilho pulsante da célula
+    const glowR = p.r * (2.4 + Math.sin(performance.now() / 600) * 0.3);
+    const glowColor = p.hurtFlash > 0 ? `rgba(255,77,94,${0.35 * p.hurtFlash})` : 'rgba(143,227,199,0.22)';
     const grad = ctx.createRadialGradient(0, 0, p.r * 0.4, 0, 0, glowR);
     grad.addColorStop(0, glowColor);
     grad.addColorStop(1, 'rgba(143,227,199,0)');
@@ -597,47 +373,10 @@ class PhaseBase {
       ctx.restore();
     }
 
-    // anel expansivo do Pulso Celular
-    if(p.pulseFlash > 0){
-      ctx.save();
-      ctx.globalAlpha = p.pulseFlash * 0.8;
-      ctx.strokeStyle = '#8fd9ff';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(0, 0, 120 * (1 - p.pulseFlash) + p.r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // rastro do Dash Celular: um streak simples na direção do impulso
-    if(p.isDashing){
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      ctx.strokeStyle = '#bfe9ff';
-      ctx.lineWidth = p.r * 1.1;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(-p.dashDirX * 26, -p.dashDirY * 26);
-      ctx.lineTo(0, 0);
-      ctx.stroke();
-      ctx.restore();
-    }
-
     if(p.isInvulnerable && Math.floor(performance.now() / 100) % 2 === 0){
       ctx.globalAlpha = 0.4;
     }
-
-    // compressão/expansão: a célula estica na direção do movimento e
-    // se achata levemente no eixo perpendicular, como uma gota de gel.
-    const speed = Math.hypot(p.vx, p.vy);
-    const moveAngle = speed > 4 ? Math.atan2(p.vy, p.vx) : (p._lastAngle || 0);
-    p._lastAngle = moveAngle;
-    const stretchAmt = Math.min(0.16, speed / 900);
-    ctx.rotate(moveAngle);
-    ctx.scale(1 + stretchAmt, 1 - stretchAmt);
-    ctx.rotate(-moveAngle);
-
-    ctx.fillStyle = p.hurtFlash > 0 ? '#ffb3ba' : (p.isOverloaded ? '#ffe1a3' : '#8fe3c7');
+    ctx.fillStyle = p.hurtFlash > 0 ? '#ffb3ba' : '#8fe3c7';
     ctx.beginPath();
     const points = 16;
     for(let i = 0; i < points; i++){
@@ -660,19 +399,11 @@ class PhaseBase {
 
   renderMessage(ctx){
     if(!this.message) return;
-    // mensagem entra e sai suavemente (o messageTimer nasce em 1.6s)
-    const t = this.messageTimer;
-    let alpha = 1;
-    if(t > 1.3) alpha = (1.6 - t) / 0.3;
-    else if(t < 0.3) alpha = t / 0.3;
-    alpha = Math.max(0, Math.min(1, alpha));
-    const rise = (1 - alpha) * 6;
     ctx.save();
-    ctx.globalAlpha = alpha;
     ctx.font = 'bold 16px monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffd166';
-    ctx.fillText(this.message, this.game.bounds.w / 2, 40 - rise);
+    ctx.fillText(this.message, this.game.bounds.w / 2, 40);
     ctx.restore();
   }
 
@@ -703,7 +434,6 @@ class InterfasePhase extends PhaseBase {
     this.need = { ATP: 3, DNA: 3, Nutrientes: 3 };
     this.got = { ATP: 0, DNA: 0, Nutrientes: 0 };
     this.spawnEnemyWave(['chaser', 'hunter']);
-    this.initSpawnFlow(['chaser', 'hunter'], { minAlive: 3, maxMinAlive: 5, rampEvery: 24, bonusTypes: ['shooter'] });
 
     const defs = [
       { type: 'ATP', color: '#4c8cff', r: 8 },
@@ -717,13 +447,10 @@ class InterfasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
-    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
-    this.updateHealthPickups();
     this.drainEnergy(dt);
     this.updateMessage(dt);
-    this.protectIdleItems('Um Devorador tentou roubar um recurso!');
 
     const p = this.game.player;
     for(const it of this.items){
@@ -760,7 +487,6 @@ class ProfasePhase extends PhaseBase {
     super(game);
     this.total = 4;
     this.spawnEnemyWave(['chaser', 'chaser', 'hunter', 'shooter']);
-    this.initSpawnFlow(['chaser', 'hunter', 'shooter'], { minAlive: 3, maxMinAlive: 6, rampEvery: 22, bonusTypes: ['tank'] });
     this.spawnScattered(this.total, (x, y) => new Item(x, y, { type: 'chromosome', color: '#9b7bff', r: 9 }));
 
     const b = this.game.bounds;
@@ -771,13 +497,10 @@ class ProfasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
-    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
-    this.updateHealthPickups();
     this.drainEnergy(dt);
     this.updateMessage(dt);
-    this.protectIdleItems('Um Devorador quase destruiu um cromossomo!');
 
     const p = this.game.player;
     this.tryPickup();
@@ -801,35 +524,28 @@ class ProfasePhase extends PhaseBase {
 }
 
 /* ==================== FASE 3: METÁFASE ==================== */
-// Objetivo em <3 segundos: cada cromossomo tem uma cor, cada faixa da placa
-// tem a mesma cor pintada e um "fantasma" tracejado mostrando exatamente
-// onde aquele cromossomo precisa chegar. Perto da faixa certa, a célula é
-// puxada suavemente para o centro dela (ímã) e a entrega aceita uma margem
-// generosa — o jogador só erra se ignorar a cor, nunca por falta de precisão.
 class MetafasePhase extends PhaseBase {
   get index(){ return 2; }
   get name(){ return 'Metáfase'; }
-  get objective(){ return 'Leve cada cromossomo até a faixa da MESMA COR na placa equatorial.'; }
+  get objective(){ return 'Leve cada cromossomo até a FAIXA correta da placa equatorial.'; }
 
   constructor(game){
     super(game);
     this.total = 5;
-    this.slotColors = ['#9b7bff', '#54d6ff', '#ffb84d', '#ff6bcb', '#6bffb0'];
     this.spawnEnemyWave(['chaser', 'hunter', 'hunter', 'shooter', 'tank']);
-    this.initSpawnFlow(['chaser', 'hunter', 'shooter', 'tank'], { minAlive: 4, maxMinAlive: 6, rampEvery: 20 });
 
     const b = this.game.bounds;
     this.plateW = 46;
     this.plateH = b.h - b.margin * 2;
     this.zones.push(new Zone(b.w / 2, b.h / 2, 0, {
-      label: 'Placa Metafásica', color: '#cfd6ff', capacity: this.total,
+      label: 'Placa Metafásica', color: '#9b7bff', capacity: this.total,
       shape: 'rect', w: this.plateW, h: this.plateH
     }));
 
-    // cada cromossomo já nasce com a cor da sua faixa correta
+    // cada cromossomo tem uma faixa (slot) correta na placa
     const slots = [...Array(this.total).keys()];
     this.spawnScattered(this.total, (x, y, i) => new Item(x, y, {
-      type: 'chromosome', color: this.slotColors[slots[i]], r: 9, slot: slots[i]
+      type: 'chromosome', color: '#9b7bff', r: 9, slot: slots[i]
     }));
   }
 
@@ -842,51 +558,30 @@ class MetafasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
-    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
-    this.updateHealthPickups();
     this.drainEnergy(dt);
     this.updateMessage(dt);
-    this.protectIdleItems('Um Devorador desalinhou um cromossomo!');
 
     const p = this.game.player;
     this.tryPickup();
-    const z = this.zones[0];
-
     if(p.carrying){
-      const bandH = this.plateH / this.total;
-      const correctMid = this.bandBounds(p.carrying.slot).mid;
-      const nearPlateX = Math.abs(p.x - z.x) < z.w / 2 + 50;
-      const nearBand = Math.abs(p.y - correctMid) < bandH * 1.3;
-
-      // ímã: perto da faixa da cor certa, a célula é guiada suavemente até o centro dela
-      if(nearPlateX && nearBand){
-        const pull = 1 - Math.exp(-6 * dt);
-        p.y += (correctMid - p.y) * pull;
-        if(!p.carrying.snapCued){
-          p.carrying.snapCued = true;
-          this.game.audio.snap();
-        }
-      } else {
-        p.carrying.snapCued = false;
-      }
-
+      const z = this.zones[0];
       const insidePlateX = Math.abs(p.x - z.x) < z.w / 2;
       const insidePlateY = Math.abs(p.y - z.y) < this.plateH / 2;
       if(insidePlateX && insidePlateY){
-        // margem generosa: aceita a entrega perto do centro da faixa certa
-        if(Math.abs(p.y - correctMid) < bandH * 0.62){
+        const bandH = this.plateH / this.total;
+        const relY = p.y - (z.y - this.plateH / 2);
+        const targetSlot = Math.max(0, Math.min(this.total - 1, Math.floor(relY / bandH)));
+        if(targetSlot === p.carrying.slot){
           p.carrying.state = 'delivered';
           z.filled++;
           this.rewardEnergy(8);
           this.game.audio.success();
-          this.game.spawnParticles(p.x, correctMid, p.carrying.color, 14, { life: 0.45, speed: 100, glow: true });
-          this.game.triggerShake(3, 0.12);
-          this.showMessage('Cromossomo alinhado!');
+          this.game.spawnParticles(p.x, p.y, z.color, 10, { life: 0.4, speed: 90 });
           p.carrying = null;
         } else {
-          this.showMessage('Essa não é a cor certa — siga o brilho igual ao seu!');
+          this.showMessage('Faixa errada! Encontre a posição certa.');
           this.game.audio.fail();
           p.carrying.state = 'idle';
           p.carrying.x = p.x - 30;
@@ -897,67 +592,24 @@ class MetafasePhase extends PhaseBase {
     }
 
     this.clampPlayer();
-    if(z.filled >= this.total) this.completed = true;
+    if(this.zones[0].filled >= this.total) this.completed = true;
   }
 
   render(ctx){
-    this.renderZones(ctx);
-    this.renderBandFills(ctx);
-    this.renderGhosts(ctx);
-    this.renderItems(ctx);
-    this.renderDevouradores(ctx);
-    this.renderProjectiles(ctx);
-    this.renderPlayer(ctx);
-    this.renderMessage(ctx);
-    this.renderPhaseTimer(ctx);
-  }
-
-  /** Pinta cada faixa da placa com a cor do cromossomo que pertence a ela. */
-  renderBandFills(ctx){
+    super.render(ctx);
+    // marca as faixas da placa para orientar o jogador
     const z = this.zones[0];
-    const bandH = this.plateH / this.total;
     ctx.save();
-    for(let i = 0; i < this.total; i++){
-      const top = z.y - this.plateH / 2 + i * bandH;
-      ctx.fillStyle = this.slotColors[i];
-      ctx.globalAlpha = 0.1;
-      ctx.fillRect(z.x - z.w / 2, top, z.w, bandH);
-      ctx.globalAlpha = 0.5;
-      ctx.strokeStyle = this.slotColors[i];
-      ctx.lineWidth = 1;
-      ctx.strokeRect(z.x - z.w / 2, top + 1, z.w, bandH - 2);
-      // número da faixa, redundante à cor (ajuda daltônicos e reforça a leitura rápida)
-      ctx.globalAlpha = 0.8;
-      ctx.fillStyle = this.slotColors[i];
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'right';
-      ctx.fillText(String(i + 1), z.x - z.w / 2 - 8, top + bandH / 2 + 4);
+    ctx.strokeStyle = 'rgba(155,123,255,0.25)';
+    ctx.lineWidth = 1;
+    for(let i = 1; i < this.total; i++){
+      const y = z.y - this.plateH / 2 + i * (this.plateH / this.total);
+      ctx.beginPath();
+      ctx.moveTo(z.x - z.w / 2, y);
+      ctx.lineTo(z.x + z.w / 2, y);
+      ctx.stroke();
     }
     ctx.restore();
-  }
-
-  /**
-   * "Fantasmas": para cada cromossomo ainda não entregue, um contorno
-   * tracejado da mesma cor marca exatamente onde ele precisa chegar. O
-   * fantasma do item que o jogador está carregando pulsa mais forte.
-   */
-  renderGhosts(ctx){
-    const z = this.zones[0];
-    for(const it of this.items){
-      if(it.type !== 'chromosome' || it.state === 'delivered') continue;
-      const mid = this.bandBounds(it.slot).mid;
-      const carried = it.state === 'carried';
-      const pulse = 0.35 + 0.2 * Math.sin(performance.now() / (carried ? 140 : 400));
-      ctx.save();
-      ctx.globalAlpha = carried ? 0.55 + pulse * 0.4 : 0.28 + pulse * 0.15;
-      ctx.strokeStyle = it.color;
-      ctx.lineWidth = carried ? 2.5 : 1.5;
-      ctx.setLineDash([5, 4]);
-      ctx.beginPath();
-      ctx.arc(z.x, mid, it.r + (carried ? 6 : 3), 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
   }
 
   get progress(){ return this.zones[0].filled / this.total; }
@@ -967,7 +619,7 @@ class MetafasePhase extends PhaseBase {
 class AnafasePhase extends PhaseBase {
   get index(){ return 3; }
   get name(){ return 'Anáfase'; }
-  get objective(){ return 'Leve cada cromátide para o polo da MESMA COR (verde ou azul), sempre em pares opostos.'; }
+  get objective(){ return 'Separe as cromátides-irmãs para polos opostos antes do tempo acabar.'; }
 
   constructor(game){
     super(game);
@@ -975,29 +627,24 @@ class AnafasePhase extends PhaseBase {
     this.completedPairs = 0;
     this.pairDeliveries = {};
     this.spawnEnemyWave(['chaser', 'hunter', 'shooter', 'tank', 'hunter']);
-    this.initSpawnFlow(['chaser', 'hunter', 'shooter', 'tank'], { minAlive: 4, maxMinAlive: 6, rampEvery: 16 });
     this.phaseTimeLeft = 48;
     this.phaseTimeMax = 48;
 
     const b = this.game.bounds;
-    const leftColor = '#4ade80', rightColor = '#4c8cff';
     this.zones.push(new Zone(70, b.h / 2, 55, {
-      label: 'Polo Esquerdo (verde)', color: leftColor, capacity: this.pairs, shape: 'circle', side: 'left'
+      label: 'Polo Esquerdo', color: '#4ade80', capacity: this.pairs, shape: 'circle', side: 'left'
     }));
     this.zones.push(new Zone(b.w - 70, b.h / 2, 55, {
-      label: 'Polo Direito (azul)', color: rightColor, capacity: this.pairs, shape: 'circle', side: 'right'
+      label: 'Polo Direito', color: '#4c8cff', capacity: this.pairs, shape: 'circle', side: 'right'
     }));
 
-    // cada cromátide já nasce colorida como o polo para onde ela deve ir —
-    // não há mais adivinhação de qual metade combina com qual polo.
     for(let i = 0; i < this.pairs; i++){
       this.pairDeliveries[i] = [];
       const cx = b.w / 2 + (Math.random() * 40 - 20);
       const cy = b.margin + 40 + i * ((b.h - b.margin * 2 - 40) / this.pairs);
-      this.items.push(new Item(cx - 8, cy, { type: 'chromatid', pairId: i, r: 8, color: leftColor }));
-      this.items.push(new Item(cx + 8, cy, { type: 'chromatid', pairId: i, r: 8, color: rightColor }));
+      this.items.push(new Item(cx - 8, cy, { type: 'chromatid', pairId: i, r: 8, color: '#c9a5ff' }));
+      this.items.push(new Item(cx + 8, cy, { type: 'chromatid', pairId: i, r: 8, color: '#8a5bd6' }));
     }
-    this.showMessage('Verde para o polo verde, azul para o polo azul!');
   }
 
   onPhaseTimeout(){
@@ -1014,10 +661,8 @@ class AnafasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
-    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
-    this.updateHealthPickups();
     this.drainEnergy(dt);
     this.updateMessage(dt);
     if(!this.completed) this.updatePhaseTimer(dt);
@@ -1070,20 +715,16 @@ class AnafasePhase extends PhaseBase {
 class TelofasePhase extends PhaseBase {
   get index(){ return 4; }
   get name(){ return 'Telófase'; }
-  get objective(){
-    return this.bossDefeated
-      ? 'Núcleo Devorador destruído! Proteja os núcleos até o fim.'
-      : 'Proteja os dois novos núcleos e derrote o Núcleo Devorador.';
-  }
+  get objective(){ return 'Proteja os dois novos núcleos até a divisão se completar.'; }
 
   constructor(game){
     super(game);
     this.defenseDuration = 30;
     this.phaseTimeLeft = this.defenseDuration;
     this.phaseTimeMax = this.defenseDuration;
+    this.spawnTimer = 6;
     this.nucleusShieldMax = 100;
     this.drainRate = 9; // dano/seg quando um Devorador fica perto do núcleo
-    this.bossDefeated = false;
 
     const b = this.game.bounds;
     this.zones.push(new Zone(90, b.h / 2, 55, {
@@ -1095,27 +736,6 @@ class TelofasePhase extends PhaseBase {
 
     this.spawnEnemyWave(['chaser', 'hunter', 'shooter']);
     this.spawnEnemyWave(['boss'], 1);
-    this.initSpawnFlow(['chaser', 'hunter'], { minAlive: 3, maxMinAlive: 6, rampEvery: 18, bonusTypes: ['shooter'] });
-  }
-
-  /**
-   * Derrotar o Núcleo Devorador (o boss desta fase) é o clímax da campanha:
-   * ele para de mandar reforços (spawnPool = null) e, na primeira vez, concede
-   * a Sobrecarga Mitótica na hora — o jogador ainda tem tempo de fase sobrando
-   * para realmente usá-la, em vez de recebê-la só na tela de vitória.
-   */
-  onDevouradorDefeated(d){
-    super.onDevouradorDefeated(d);
-    if(d.type === 'boss' && !this.bossDefeated){
-      this.bossDefeated = true;
-      this.spawnPool = null; // encerra o fluxo contínuo: nenhum Devorador novo a partir daqui
-      this.showMessage('Núcleo Devorador destruído! Proteja os núcleos até o fim.');
-      const p = this.game.player;
-      if(p && !p.abilities.overload){
-        p.abilities.overload = true;
-        this.game.showUnlockScreen(ABILITY_UNLOCKS[4], () => { this.game.state = 'playing'; });
-      }
-    }
   }
 
   onPhaseTimeout(){
@@ -1126,10 +746,8 @@ class TelofasePhase extends PhaseBase {
 
   update(dt){
     this.updateDevouradores(dt);
-    this.updateSpawnFlow(dt);
     this.updateProjectiles(dt);
     this.handleCollisions();
-    this.updateHealthPickups();
     this.drainEnergy(dt);
     this.updateMessage(dt);
 
@@ -1148,6 +766,13 @@ class TelofasePhase extends PhaseBase {
           }
         }
       }
+    }
+
+    // ondas periódicas de reforço para manter a pressão
+    this.spawnTimer -= dt;
+    if(this.spawnTimer <= 0 && this.devouradores.length < 8){
+      this.spawnTimer = 6.5;
+      this.spawnEnemyWave([Math.random() < 0.5 ? 'chaser' : 'hunter'], 1.1);
     }
 
     if(!this.completed && !this.failed) this.updatePhaseTimer(dt);

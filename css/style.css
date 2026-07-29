@@ -91,29 +91,12 @@ html,body{
 .bar-fill{
   height:100%;
   width:100%;
-  transition: width 0.28s cubic-bezier(.22,.9,.32,1.15);
-  position:relative;
+  transition: width 0.15s ease-out;
 }
 
 .health-fill{ background: linear-gradient(90deg, var(--red), #ff8a94); }
 .energy-fill{ background: linear-gradient(90deg, var(--blue), #8fb4ff); }
-.progress-fill{
-  background: linear-gradient(90deg, var(--green), #8ef0ba);
-  overflow:hidden;
-}
-.progress-fill::after{
-  content:"";
-  position:absolute;
-  inset:0;
-  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%);
-  background-size:200% 100%;
-  animation: progress-shine 2.6s ease-in-out infinite;
-}
-
-@keyframes progress-shine{
-  0%{ background-position: 160% 0; }
-  100%{ background-position: -60% 0; }
-}
+.progress-fill{ background: linear-gradient(90deg, var(--green), #8ef0ba); }
 
 .bar-health.bar-low{
   animation: hp-pulse 0.6s infinite;
@@ -181,40 +164,6 @@ html,body{
   background:#0b0f16;
   border:1px solid var(--border);
   border-radius:10px;
-}
-
-/* ---------- Indicador grande de fase ---------- */
-.phase-banner{
-  position:absolute;
-  inset:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  pointer-events:none;
-  z-index:4;
-}
-
-.phase-banner span{
-  font-size: clamp(22px, 6vw, 40px);
-  font-weight:bold;
-  letter-spacing:5px;
-  text-transform:uppercase;
-  color:#f4f7fb;
-  text-shadow: 0 0 22px rgba(76,140,255,0.75), 0 2px 10px rgba(0,0,0,0.85);
-  opacity:0;
-  transform: scale(0.86);
-}
-
-.phase-banner.show span{
-  animation: phase-banner-pop 1.9s cubic-bezier(.22,.9,.3,1) forwards;
-}
-
-@keyframes phase-banner-pop{
-  0%{ opacity:0; transform: scale(0.82); }
-  14%{ opacity:1; transform: scale(1.04); }
-  22%{ opacity:1; transform: scale(1); }
-  75%{ opacity:1; transform: scale(1); }
-  100%{ opacity:0; transform: scale(1.03); }
 }
 
 /* ---------- Overlays (title / end) ---------- */
@@ -290,16 +239,6 @@ html,body{
 
 .btn.hidden{ display:none; }
 
-.ngplus-btn{
-  border-color: var(--yellow);
-  color: var(--yellow);
-}
-
-.ngplus-btn:hover{
-  background: var(--yellow);
-  color: #201400;
-}
-
 /* ---------- Dialogue box ---------- */
 #dialogueBox{
   width:100%;
@@ -337,78 +276,6 @@ html,body{
   animation: blink 1.2s infinite;
 }
 
-/* ---------- Barra de adaptações (habilidades desbloqueadas) ---------- */
-.hud-row-abilities{ gap:8px; }
-
-.ability-bar{
-  display:flex;
-  gap:8px;
-}
-
-.ability-slot{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:1px;
-  width:52px;
-  height:32px;
-  border:2px solid var(--border);
-  border-radius:5px;
-  background:#000;
-  opacity:0.5;
-  transition: opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.ability-slot.ready{
-  opacity:1;
-  border-color: var(--green);
-  box-shadow: 0 0 8px rgba(74,222,128,0.5);
-}
-
-.ability-key{
-  font-size:10px;
-  font-weight:bold;
-  color: var(--yellow);
-  letter-spacing:0.5px;
-}
-
-.ability-label{
-  font-size:8px;
-  color: var(--text-dim);
-  letter-spacing:0.5px;
-}
-
-.ability-slot.ready .ability-label{ color: var(--text); }
-
-/* ---------- Tela de nova adaptação ---------- */
-.unlock-overlay{
-  background: rgba(6,10,18,0.97);
-  border: 2px solid var(--yellow);
-  z-index: 5;
-}
-
-.unlock-tag{
-  letter-spacing:5px;
-  color: var(--yellow);
-  font-size:13px;
-  margin:0;
-}
-
-.unlock-name{
-  font-size: clamp(22px, 5vw, 34px);
-  color:#fff;
-  margin:6px 0 10px 0;
-  text-shadow: 0 0 22px rgba(255,209,102,0.75), 0 2px 10px rgba(0,0,0,0.85);
-}
-
-.unlock-control{
-  color: var(--blue);
-  font-size:13px;
-  margin:0 0 4px 0;
-  max-width:520px;
-}
-
 /* ---------- Responsive ---------- */
 @media (max-width: 640px){
   .stat-label{ width:50px; font-size:10px; }
@@ -416,6 +283,4 @@ html,body{
   .objective-text{ font-size:12px; }
   .devoradores-tag{ width:100%; margin-left:0; }
   #app{ padding:8px; gap:8px; }
-  .ability-slot{ width:42px; height:28px; }
-  .ability-label{ display:none; }
 }
