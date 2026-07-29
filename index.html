@@ -35,18 +35,29 @@
       <span id="objectiveText" class="objective-text">—</span>
       <span class="devoradores-tag">DEVORADORES: <span id="devouradoresCount">0</span></span>
     </div>
+    <div class="hud-row hud-row-abilities" id="abilityRow" style="display:none;">
+      <span class="objective-tag">ADAPTAÇÕES</span>
+      <div id="abilityBar" class="ability-bar"></div>
+    </div>
   </div>
 
   <!-- Game world -->
   <div id="canvasWrap">
     <canvas id="gameCanvas" width="900" height="560"></canvas>
 
+    <!-- Indicador grande da fase atual (aparece e some sozinho) -->
+    <div id="phaseBanner" class="phase-banner"><span id="phaseBannerText"></span></div>
+
     <!-- Title screen -->
     <div id="titleScreen" class="overlay">
       <h1 class="title">CELL CYCLE RUSH</h1>
       <p class="subtitle">A última célula precisa se dividir para salvar o organismo.</p>
-      <p class="prompt">Pressione ENTER ou clique para começar</p>
+      <button id="newGameBtn" class="btn">Novo Jogo</button>
+      <button id="ngPlusBtn" class="btn ngplus-btn hidden">NG+ — Começar com todas as Adaptações</button>
+      <p class="prompt">Pressione ENTER para começar</p>
       <p class="controls-hint">Movimento: WASD ou Setas &nbsp;•&nbsp; Ataque: ESPAÇO, F ou clique</p>
+      <p class="controls-hint">Novas adaptações são desbloqueadas ao longo da campanha</p>
+      <p class="controls-hint">Seu desempenho na campanha decide como ela termina</p>
     </div>
 
     <!-- End screen -->
@@ -55,6 +66,15 @@
       <p id="endMessage" class="subtitle"></p>
       <button id="playAgainBtn" class="btn hidden">Jogar novamente</button>
       <button id="retryBtn" class="btn hidden">Tentar novamente</button>
+    </div>
+
+    <!-- Tela de nova adaptação (recompensa por derrotar um boss) -->
+    <div id="unlockScreen" class="overlay unlock-overlay hidden">
+      <p class="unlock-tag">NOVA ADAPTAÇÃO</p>
+      <h2 id="unlockName" class="unlock-name">—</h2>
+      <p id="unlockFlavor" class="subtitle">—</p>
+      <p id="unlockControl" class="unlock-control">—</p>
+      <p class="prompt">[ Pressione ESPAÇO ]</p>
     </div>
   </div>
 
@@ -67,6 +87,7 @@
 </div>
 
 <script src="js/audio.js"></script>
+<script src="js/save.js"></script>
 <script src="js/entities.js"></script>
 <script src="js/dialogue.js"></script>
 <script src="js/phases.js"></script>
