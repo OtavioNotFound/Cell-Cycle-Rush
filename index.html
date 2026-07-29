@@ -51,19 +51,36 @@
 
     <!-- Title screen -->
     <div id="titleScreen" class="overlay">
-      <h1 class="title">MEIOSE RELOAD</h1>
-      <p class="subtitle">A última célula precisa se dividir para salvar o organismo.</p>
-      <button id="newGameBtn" class="btn">Novo Jogo</button>
-      <button id="ngPlusBtn" class="btn ngplus-btn hidden">NG+ — Começar com todas as Adaptações</button>
-      <button id="achievementsBtn" class="btn">Conquistas</button>
-      <button id="codexBtn" class="btn">Arquivo Celular</button>
-      <button id="labBtn" class="btn">Modo Laboratório</button>
-      <button id="settingsBtn" class="btn">Acessibilidade</button>
-      <p class="prompt">Pressione ENTER para começar</p>
-      <p class="controls-hint">Movimento: WASD ou Setas &nbsp;•&nbsp; Ataque: ESPAÇO, F ou clique</p>
-      <p class="controls-hint">Pausa e evolução: ESC</p>
-      <p class="controls-hint">Novas adaptações são desbloqueadas ao longo da campanha</p>
-      <p class="controls-hint">Seu desempenho na campanha decide como ela termina</p>
+      <div class="title-cell-field" aria-hidden="true">
+        <i></i><i></i>
+      </div>
+      <main class="title-menu-panel">
+        <header class="title-brand">
+          <h1 class="title"><span>MEIOSE</span> <strong>RELOAD</strong></h1>
+          <p class="subtitle">A última célula precisa se dividir para salvar o organismo.</p>
+        </header>
+
+        <nav class="title-actions" aria-label="Menu principal">
+          <button id="newGameBtn" class="btn title-primary"><span>Novo Jogo</span></button>
+          <button id="ngPlusBtn" class="btn ngplus-btn hidden"><span>Nova Jornada +</span></button>
+          <div class="title-secondary-actions">
+            <button id="achievementsBtn" class="btn"><span>Conquistas</span></button>
+            <button id="codexBtn" class="btn"><span>Arquivo Celular</span></button>
+            <button id="labBtn" class="btn"><span>Laboratório</span></button>
+            <button id="settingsBtn" class="btn"><span>Acessibilidade</span></button>
+          </div>
+        </nav>
+
+        <footer class="title-footer">
+          <p class="prompt">ENTER para começar</p>
+          <div class="title-hints">
+            <span>WASD / SETAS <b>MOVER</b></span>
+            <span>ESPAÇO / F <b>ATACAR</b></span>
+            <span>ESC <b>PAUSA E EVOLUÇÃO</b></span>
+          </div>
+          <p class="title-version">Seu desempenho muda o destino da célula.</p>
+        </footer>
+      </main>
     </div>
 
     <div id="achievementsScreen" class="overlay achievements-overlay hidden">
