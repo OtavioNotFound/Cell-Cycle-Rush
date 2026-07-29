@@ -33,8 +33,24 @@ class Game {
     this.time = 0;
     this.blobs = this.makeBackgroundBlobs();
 
+    // câmera com leve antecipação de movimento (sem ser um scroll de plataforma)
+    this.camLeadX = 0;
+    this.camLeadY = 0;
+    // zoom sutil ao iniciar cada fase + fade a partir do preto
+    this.phaseZoomT = 1;
+    this.phaseFadeIn = 0;
+    // congelamento breve (hit-stop) ao acertar um golpe, para dar peso ao impacto
+    this.hitStopUntil = 0;
+    // rastro discreto da célula do jogador
+    this.trailTimer = 0;
+    // combo de abates: recompensa jogar agressivo (cura + regen de energia mais rápida)
+    this.combo = 0;
+    this.comboTimer = 0;
+
     this.dom = {
       titleScreen: document.getElementById('titleScreen'),
+      newGameBtn: document.getElementById('newGameBtn'),
+      ngPlusBtn: document.getElementById('ngPlusBtn'),
       endScreen: document.getElementById('endScreen'),
       endTitle: document.getElementById('endTitle'),
       endMessage: document.getElementById('endMessage'),
@@ -47,8 +63,19 @@ class Game {
       energyFill: document.getElementById('energyFill'),
       progressFill: document.getElementById('progressFill'),
       timerText: document.getElementById('timerText'),
-      devouradoresCount: document.getElementById('devouradoresCount')
+      devouradoresCount: document.getElementById('devouradoresCount'),
+      phaseBanner: document.getElementById('phaseBanner'),
+      phaseBannerText: document.getElementById('phaseBannerText'),
+      unlockScreen: document.getElementById('unlockScreen'),
+      unlockName: document.getElementById('unlockName'),
+      unlockFlavor: document.getElementById('unlockFlavor'),
+      unlockControl: document.getElementById('unlockControl'),
+      abilityRow: document.getElementById('abilityRow'),
+      abilityBar: document.getElementById('abilityBar')
     };
+    this.pendingUnlockDone = null;
+    this.newGamePlus = false;
+    this.refreshNgPlusAvailability();
 
     this.bindInput();
     requestAnimationFrame(this.loop.bind(this));
@@ -64,16 +91,23 @@ class Game {
       if(k === 'enter' || k === ' '){
         if(this.state === 'title'){ this.startIntro(); }
         else if(this.state === 'dialogue'){ this.dialogue.advance(); }
+        else if(this.state === 'unlock'){ e.preventDefault(); this.dismissUnlock(); }
         else if(this.state === 'playing' && k === ' '){ e.preventDefault(); this.triggerAttack(); }
       }
       if(k === 'f' && this.state === 'playing'){ this.triggerAttack(); }
+      if(k === 'shift' && this.state === 'playing'){ this.triggerDash(); }
+      if(k === 'e' && this.state === 'playing'){ this.triggerShot(); }
+      if(k === 'r' && this.state === 'playing'){ this.triggerPulse(); }
+      if(k === 'q' && this.state === 'playing'){ this.triggerOverload(); }
     });
     window.addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
 
-    this.dom.titleScreen.addEventListener('click', () => { if(this.state === 'title') this.startIntro(); });
+    this.dom.newGameBtn.addEventListener('click', e => { e.stopPropagation(); this.startIntro(false); });
+    this.dom.ngPlusBtn.addEventListener('click', e => { e.stopPropagation(); this.startIntro(true); });
     this.dom.dialogueBox.addEventListener('click', () => { if(this.state === 'dialogue') this.dialogue.advance(); });
+    this.dom.unlockScreen.addEventListener('click', () => { if(this.state === 'unlock') this.dismissUnlock(); });
     this.dom.retryBtn.addEventListener('click', () => this.reset());
-    this.dom.playAgainBtn.addEventListener('click', () => this.reset());
+    this.dom.playAgainBtn.addEventListener('click', () => this.backToTitle());
 
     this.canvas.addEventListener('click', () => { if(this.state === 'playing') this.triggerAttack(); });
   }
@@ -81,34 +115,182 @@ class Game {
   triggerAttack(){
     const p = this.player;
     if(!p || !p.canAttack) return;
-    p.attackCooldownUntil = performance.now() + 420;
+    const overload = p.isOverloaded;
+    p.attackCooldownUntil = performance.now() + (overload ? 230 : 420); // Sobrecarga: golpes mais rápidos
     p.attackFlash = 1;
     const cost = Math.min(p.energy, 12);
     p.energy = Math.max(0, p.energy - 12);
-    const damage = cost >= 12 ? 30 : 16; // ataque mais fraco sem energia suficiente
+    let damage = cost >= 12 ? 30 : 16; // ataque mais fraco sem energia suficiente
+    if(overload) damage = Math.round(damage * 1.3);
     this.audio.attack();
     if(this.phase && this.phase.performAttack){
       this.phase.performAttack(p.x, p.y, 78, damage);
     }
-    this.triggerShake(3, 0.12);
+  }
+
+  /** Boss 1 — Dash Celular: avança rápido na direção do movimento (ou do último
+   *  rumo, se parado), com breve invulnerabilidade. Atravessa grupos pequenos
+   *  de inimigos sem sofrer dano. */
+  triggerDash(){
+    const p = this.player;
+    if(!p || !p.canDash) return;
+    const now = performance.now();
+    let dx = 0, dy = 0;
+    if(this.keys['w'] || this.keys['arrowup']) dy -= 1;
+    if(this.keys['s'] || this.keys['arrowdown']) dy += 1;
+    if(this.keys['a'] || this.keys['arrowleft']) dx -= 1;
+    if(this.keys['d'] || this.keys['arrowright']) dx += 1;
+    if(dx === 0 && dy === 0){
+      dx = Math.cos(p._lastAngle || 0);
+      dy = Math.sin(p._lastAngle || 0);
+    }
+    const len = Math.hypot(dx, dy) || 1;
+    p.dashDirX = dx / len;
+    p.dashDirY = dy / len;
+    p.dashActiveUntil = now + p.dashDurationMs;
+    p.dashCooldownUntil = now + p.dashCooldownMs;
+    p.invulnUntil = Math.max(p.invulnUntil, now + p.dashDurationMs + 60);
+    this.audio.dash();
+    this.spawnParticles(p.x, p.y, '#bfe9ff', 10, { life: 0.3, speed: 40, glow: true });
+    this.triggerShake(3, 0.1);
+  }
+
+  /** Boss 2 — Disparo de Energia: projétil que mira o inimigo mais próximo (ou o
+   *  rumo atual, se não houver alvo), atravessa 1 inimigo e não substitui o
+   *  ataque corpo a corpo. */
+  triggerShot(){
+    const p = this.player;
+    if(!p || !p.canShot) return;
+    const now = performance.now();
+    p.shotCooldownUntil = now + p.shotCooldownMs;
+    const target = this.findNearestDevorador();
+    let tx, ty;
+    if(target){ tx = target.x; ty = target.y; }
+    else {
+      const ang = p._lastAngle || 0;
+      tx = p.x + Math.cos(ang) * 200;
+      ty = p.y + Math.sin(ang) * 200;
+    }
+    this.audio.shootPlayer();
+    this.spawnParticles(p.x, p.y, '#8fe3ff', 5, { life: 0.2, speed: 60 });
+    if(this.phase && this.phase.spawnPlayerProjectile){
+      this.phase.spawnPlayerProjectile(p.x, p.y, tx, ty);
+    }
+  }
+
+  findNearestDevorador(){
+    if(!this.phase || !this.phase.devouradores || !this.phase.devouradores.length) return null;
+    const p = this.player;
+    let best = null, bestDist = Infinity;
+    for(const d of this.phase.devouradores){
+      const dist = Math.hypot(p.x - d.x, p.y - d.y);
+      if(dist < bestDist){ bestDist = dist; best = d; }
+    }
+    return best;
+  }
+
+  /** Boss 3 — Pulso Celular: onda que empurra inimigos próximos para abrir espaço.
+   *  Dano baixo, não é pensado para matar. */
+  triggerPulse(){
+    const p = this.player;
+    if(!p || !p.canPulse) return;
+    const now = performance.now();
+    p.pulseCooldownUntil = now + p.pulseCooldownMs;
+    p.pulseFlash = 1;
+    this.audio.pulse();
+    this.triggerShake(5, 0.18);
+    this.spawnParticles(p.x, p.y, '#8fd9ff', 16, { life: 0.4, speed: 150, glow: true });
+    if(this.phase && this.phase.applyPulse){
+      this.phase.applyPulse(120, 240, 6);
+    }
+  }
+
+  /** Boss Final — Sobrecarga Mitótica: alguns segundos de velocidade e ataque
+   *  mais rápidos. A habilidade mais poderosa do jogo; cooldown alto. */
+  triggerOverload(){
+    const p = this.player;
+    if(!p || !p.canOverload) return;
+    const now = performance.now();
+    p.overloadActiveUntil = now + p.overloadDurationMs;
+    p.overloadCooldownUntil = now + p.overloadCooldownMs;
+    this.audio.overload();
+    this.triggerShake(6, 0.25);
+    this.spawnParticles(p.x, p.y, '#ffd166', 20, { life: 0.5, speed: 120, glow: true });
+  }
+
+  /** Congela o jogo por alguns ms (hit-stop) para dar peso a um golpe que acertou. */
+  triggerHitStop(ms){
+    this.hitStopUntil = Math.max(this.hitStopUntil, performance.now() + ms);
+  }
+
+  /**
+   * Recompensa um abate: mantém o combo vivo, devolve energia e, a cada 3
+   * abates em sequência, cura um pouco. É o que faz jogar agressivo compensar.
+   */
+  registerKill(d){
+    this.combo++;
+    this.comboTimer = 2.4;
+    const p = this.player;
+    if(!p) return;
+    if(d.type !== 'boss'){
+      p.energy = Math.min(p.maxEnergy, p.energy + 10);
+    }
+    if(this.combo % 3 === 0 && p.health > 0){
+      p.health = Math.min(p.maxHealth, p.health + 4);
+      this.spawnParticles(p.x, p.y, '#4ade80', 6, { life: 0.3, speed: 70 });
+    }
   }
 
   // ---------------------------------------------------------------------
   // Fluxo de estados
   // ---------------------------------------------------------------------
-  startIntro(){
+  startIntro(isNGPlus = false){
+    this.newGamePlus = isNGPlus;
+    // Estatísticas da campanha atual: sobrevivem a reinícios (Tentar novamente),
+    // já que um reinício não deixa de fazer parte do "desempenho geral" que
+    // decide o final. São zeradas de novo aqui, no começo de uma corrida nova.
+    this.stats = this.freshStats();
     this.dom.titleScreen.classList.add('hidden');
     this.state = 'dialogue';
     this.dialogue.start(INTRO_LINES.concat(PHASE_INTRO_LINES[0]), () => this.beginGame());
   }
 
+  freshStats(){
+    return { deaths: 0, errors: 0, collectibles: 0, collectiblesTotal: this.phaseClasses.length };
+  }
+
   beginGame(){
     this.player = new Player(this.bounds.w / 2, this.bounds.h / 2);
+    if(this.newGamePlus){
+      // NG+: a célula "lembra" TODAS as adaptações já provadas em campanhas
+      // anteriores (não só a última), lidas do save persistente.
+      const save = SaveData.load();
+      Object.keys(this.player.abilities).forEach(key => {
+        if(save.unlockedAbilities[key]) this.player.abilities[key] = true;
+      });
+    }
+    // colecionáveis são por tentativa (o mundo reinicia); mortes/erros não são.
+    this.stats = this.stats || this.freshStats();
+    this.stats.collectibles = 0;
     this.elapsed = 0;
     this.ending = false;
     this.particles = [];
     this.startPhase(0);
     this.state = 'playing';
+  }
+
+  /** Mostra/esconde o botão de NG+ conforme o jogador já tenha vencido antes. */
+  refreshNgPlusAvailability(){
+    const beaten = SaveData.load().beaten;
+    if(this.dom.ngPlusBtn) this.dom.ngPlusBtn.classList.toggle('hidden', !beaten);
+  }
+
+  /** Volta à tela de título (usado após a vitória, para permitir escolher NG+). */
+  backToTitle(){
+    this.dom.endScreen.classList.add('hidden');
+    this.refreshNgPlusAvailability();
+    this.dom.titleScreen.classList.remove('hidden');
+    this.state = 'title';
   }
 
   startPhase(i){
@@ -119,38 +301,92 @@ class Game {
     this.particles = [];
     this.dom.phaseLabel.textContent = `Fase ${i + 1}/5 — ${this.phase.name}`;
     this.dom.objectiveText.textContent = this.phase.objective;
+    this.showPhaseBanner(this.phase.name);
+    this.phaseZoomT = 0;
+    this.phaseFadeIn = 1;
+  }
+
+  /** Mostra o indicador grande de fase (estilo Undertale: simples, some sozinho). */
+  showPhaseBanner(text){
+    const el = this.dom.phaseBanner;
+    if(!el) return;
+    this.dom.phaseBannerText.textContent = text;
+    el.classList.remove('show');
+    void el.offsetWidth; // força reflow para reiniciar a animação
+    el.classList.add('show');
   }
 
   onPhaseComplete(){
     this.audio.phaseComplete();
-    const i = this.phaseIndex;
-    if(i < this.phaseClasses.length - 1){
-      this.state = 'dialogue';
-      const lines = PHASE_OUTRO_LINES[i].concat(PHASE_INTRO_LINES[i + 1]);
-      this.dialogue.start(lines, () => {
-        this.startPhase(i + 1);
-        this.state = 'playing';
-      });
-    } else {
-      this.onVictory();
+    // completar uma fase inteira recupera parte da vida: o jogador nunca deve
+    // sentir que uma partida está perdida só porque errou no começo.
+    const p = this.player;
+    if(p && p.health > 0 && p.health < p.maxHealth){
+      const healAmount = Math.max(15, p.maxHealth * 0.25);
+      p.health = Math.min(p.maxHealth, p.health + healAmount);
+      this.audio.heal();
+      this.spawnParticles(p.x, p.y, '#4ade80', 14, { life: 0.5, speed: 90, glow: true });
     }
+    const i = this.phaseIndex;
+    const proceed = () => {
+      if(i < this.phaseClasses.length - 1){
+        this.state = 'dialogue';
+        const lines = PHASE_OUTRO_LINES[i].concat(PHASE_INTRO_LINES[i + 1]);
+        this.dialogue.start(lines, () => {
+          this.startPhase(i + 1);
+          this.state = 'playing';
+        });
+      } else {
+        this.onVictory();
+      }
+    };
+
+    // Ao final desta fase, o jogador "venceu o boss" daquele estágio da mitose
+    // e ganha permanentemente uma nova adaptação — a menos que já a tenha
+    // (concedida durante a própria luta, como a Sobrecarga na Telófase, ou herdada do NG+).
+    const unlock = ABILITY_UNLOCKS[i];
+    if(unlock && p && !p.abilities[unlock.key]){
+      p.abilities[unlock.key] = true;
+      this.showUnlockScreen(unlock, proceed);
+    } else {
+      proceed();
+    }
+  }
+
+  /** Mostra a tela "NOVA ADAPTAÇÃO" e pausa o jogo até o jogador confirmar. */
+  showUnlockScreen(unlock, onDone){
+    this.state = 'unlock';
+    this.pendingUnlockDone = onDone;
+    this.audio.unlock();
+    this.dom.unlockName.textContent = unlock.name;
+    this.dom.unlockFlavor.textContent = unlock.flavor;
+    this.dom.unlockControl.textContent = unlock.controlHint;
+    this.dom.unlockScreen.classList.remove('hidden');
+  }
+
+  dismissUnlock(){
+    if(this.state !== 'unlock') return;
+    this.dom.unlockScreen.classList.add('hidden');
+    const cb = this.pendingUnlockDone;
+    this.pendingUnlockDone = null;
+    if(cb) cb();
   }
 
   onVictory(){
     if(this.ending) return;
     this.ending = true;
     this.state = 'dialogue';
-    const lines = PHASE_OUTRO_LINES[this.phaseIndex].concat(VICTORY_LINES);
+    const endingDef = decideEnding(this.stats);
+    SaveData.markBeaten(this.player.abilities);
+    // PHASE_OUTRO_LINES[4] é sempre [] (a vitória é tratada aqui, não no outro genérico)
+    const lines = PHASE_OUTRO_LINES[this.phaseIndex].concat(endingDef.lines);
     this.dialogue.start(lines, () => {
-      this.state = 'victory';
-      this.dom.endTitle.textContent = 'MITOSE CONCLUÍDA';
-      this.dom.endMessage.innerHTML =
-        'As células voltaram a se multiplicar.<br>' +
-        'Os Devoradores desapareceram.<br>' +
-        'O organismo sobreviverá.';
-      this.dom.retryBtn.classList.add('hidden');
-      this.dom.playAgainBtn.classList.remove('hidden');
-      this.dom.endScreen.classList.remove('hidden');
+      const finish = () => this.showEndScreen(endingDef, true);
+      if(endingDef.cinematic){
+        this.playEndingCinematic(endingDef.cinematic, finish);
+      } else {
+        finish();
+      }
     });
   }
 
@@ -160,16 +396,60 @@ class Game {
     this.state = 'dialogue';
     this.audio.fail();
     this.triggerShake(8, 0.4);
-    this.dialogue.start(DEFEAT_LINES, () => {
-      this.state = 'defeat';
-      this.dom.endTitle.textContent = 'FALHA NA MITOSE';
-      this.dom.endMessage.innerHTML =
-        'A última célula foi consumida.<br>' +
-        'O organismo entrou em colapso.';
-      this.dom.playAgainBtn.classList.add('hidden');
-      this.dom.retryBtn.classList.remove('hidden');
-      this.dom.endScreen.classList.remove('hidden');
+
+    // "Perder a última fase" é a condição do Final Muito Ruim (Extinção):
+    // morrer antes disso é só um game over comum, com direito a retry.
+    const isExtinction = this.phaseIndex === this.phaseClasses.length - 1;
+    if(!isExtinction && this.stats) this.stats.deaths++;
+    const endingDef = isExtinction ? EXTINCTION_ENDING : null;
+    const lines = endingDef ? endingDef.lines : DEFEAT_LINES;
+
+    this.dialogue.start(lines, () => {
+      const finish = () => {
+        if(endingDef){
+          this.showEndScreen(endingDef, false);
+        } else {
+          this.state = 'defeat';
+          this.dom.endTitle.className = 'title end-title';
+          this.dom.endTitle.textContent = 'FALHA NA MITOSE';
+          this.dom.endMessage.innerHTML =
+            'A última célula foi consumida.<br>' +
+            'O organismo entrou em colapso.';
+          this.dom.playAgainBtn.classList.add('hidden');
+          this.dom.retryBtn.classList.remove('hidden');
+          this.dom.endScreen.classList.remove('hidden');
+        }
+      };
+      if(endingDef && endingDef.cinematic){
+        this.playEndingCinematic(endingDef.cinematic, finish);
+      } else {
+        finish();
+      }
     });
+  }
+
+  /** Preenche e mostra a tela final com o final decidido (vitória ou Extinção). */
+  showEndScreen(endingDef, isVictory){
+    this.state = isVictory ? 'victory' : 'defeat';
+    this.dom.endTitle.className = 'title end-title end-title-' + endingDef.id;
+    this.dom.endTitle.textContent = endingDef.title;
+    this.dom.endMessage.innerHTML = endingDef.message;
+    this.dom.retryBtn.classList.toggle('hidden', isVictory);
+    this.dom.playAgainBtn.classList.toggle('hidden', !isVictory);
+    this.dom.endScreen.classList.remove('hidden');
+  }
+
+  /**
+   * Toca a cinemática final (reaproveitando fundo/câmera/partículas já
+   * existentes) antes de mostrar a tela com o texto do final. Pausa o jogo:
+   * durante o estado 'endingCinematic' a fase não é atualizada nem desenhada.
+   */
+  playEndingCinematic(kind, onDone){
+    this.state = 'endingCinematic';
+    this.endingKind = kind;
+    this.endingT = 0;
+    this.endingDuration = kind === 'evolution' ? 5.4 : (kind === 'rebirth' ? 4.4 : 3.2);
+    this.endingDone = onDone;
   }
 
   reset(){
@@ -285,15 +565,56 @@ class Game {
   // ---------------------------------------------------------------------
   handleMovement(dt){
     const p = this.player;
+    // Sobrecarga Mitótica: velocidade base aumentada enquanto ativa
+    p.speed = p.isOverloaded ? p.baseSpeed * 1.35 : p.baseSpeed;
+
     let dx = 0, dy = 0;
     if(this.keys['w'] || this.keys['arrowup']) dy -= 1;
     if(this.keys['s'] || this.keys['arrowdown']) dy += 1;
     if(this.keys['a'] || this.keys['arrowleft']) dx -= 1;
     if(this.keys['d'] || this.keys['arrowright']) dx += 1;
-    if(dx === 0 && dy === 0) return;
-    const len = Math.hypot(dx, dy) || 1;
-    p.x += (dx / len) * p.speed * dt;
-    p.y += (dy / len) * p.speed * dt;
+    const hasInput = dx !== 0 || dy !== 0;
+    let tx = 0, ty = 0;
+    if(hasInput){
+      const len = Math.hypot(dx, dy) || 1; // normaliza para diagonal perfeita (mesma velocidade em qualquer direção)
+      tx = (dx / len) * p.speed;
+      ty = (dy / len) * p.speed;
+    }
+
+    // Dash Celular: por uma janela curta, ignora o input e dispara na direção travada
+    if(p.isDashing){
+      tx = p.dashDirX * p.dashSpeedBoost;
+      ty = p.dashDirY * p.dashSpeedBoost;
+    }
+
+    // Interpolação exponencial: acelera rápido, mas freia com uma pitada de inércia.
+    // Isso dá sensação de peso sem tornar a célula lenta para responder.
+    const accelRate = p.isDashing ? 30 : (hasInput ? 13 : 8.5);
+    const t = 1 - Math.exp(-accelRate * dt);
+    p.vx += (tx - p.vx) * t;
+    p.vy += (ty - p.vy) * t;
+
+    // trava valores residuais minúsculos para a célula realmente parar
+    if(!hasInput && Math.hypot(p.vx, p.vy) < 2){ p.vx = 0; p.vy = 0; }
+
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+
+    // rastro discreto atrás da célula enquanto ela se move de verdade
+    const speed = Math.hypot(p.vx, p.vy);
+    if(speed > 24){
+      this.trailTimer -= dt;
+      if(this.trailTimer <= 0){
+        this.trailTimer = 0.05;
+        this.spawnParticles(p.x, p.y, '#8fe3c7', 1, { speed: 0, life: 0.32, r: p.r * 0.55, drag: 3.4, glow: false });
+      }
+    }
+
+    // câmera com leve antecipação: acompanha a direção do movimento de forma suave
+    const leadFactor = 0.055;
+    const camT = 1 - Math.exp(-4 * dt);
+    this.camLeadX += (p.vx * leadFactor - this.camLeadX) * camT;
+    this.camLeadY += (p.vy * leadFactor - this.camLeadY) * camT;
   }
 
   // ---------------------------------------------------------------------
@@ -301,21 +622,46 @@ class Game {
   // ---------------------------------------------------------------------
   loop(ts){
     if(!this.lastTime) this.lastTime = ts;
-    const dt = Math.min(0.05, (ts - this.lastTime) / 1000);
+    const rawDt = Math.min(0.05, (ts - this.lastTime) / 1000);
     this.lastTime = ts;
+    // hit-stop: um congelamento breve (50~80ms) ao acertar um golpe dá peso ao impacto
+    const frozen = performance.now() < this.hitStopUntil;
+    const dt = frozen ? 0 : rawDt;
     this.time += dt;
+
+    if(this.phaseZoomT < 1){
+      this.phaseZoomT = Math.min(1, this.phaseZoomT + rawDt / 0.5);
+    }
+    if(this.phaseFadeIn > 0){
+      this.phaseFadeIn = Math.max(0, this.phaseFadeIn - rawDt * 2.4);
+    }
 
     if(this.state === 'playing'){
       this.elapsed += dt;
       this.handleMovement(dt);
       this.phase.update(dt);
+      this.phase.updatePlayerProjectiles(dt);
       if(this.phase.completed) this.onPhaseComplete();
+      if(this.combo > 0){
+        this.comboTimer -= dt;
+        if(this.comboTimer <= 0) this.combo = 0;
+      }
       this.updateHUD();
+    }
+
+    if(this.state === 'endingCinematic'){
+      this.endingT += dt;
+      if(this.endingT >= this.endingDuration){
+        const cb = this.endingDone;
+        this.endingDone = null;
+        if(cb) cb();
+      }
     }
 
     if(this.player){
       if(this.player.attackFlash > 0) this.player.attackFlash = Math.max(0, this.player.attackFlash - dt * 3.2);
       if(this.player.hurtFlash > 0) this.player.hurtFlash = Math.max(0, this.player.hurtFlash - dt * 2.4);
+      if(this.player.pulseFlash > 0) this.player.pulseFlash = Math.max(0, this.player.pulseFlash - dt * 2.2);
     }
 
     if(this.damageFlash > 0) this.damageFlash = Math.max(0, this.damageFlash - dt * 2);
@@ -341,11 +687,35 @@ class Game {
     this.dom.energyFill.style.width = (p.energy / p.maxEnergy * 100) + '%';
     this.dom.progressFill.style.width = (this.phase.progress * 100) + '%';
     this.dom.timerText.textContent = this.formatTime(this.elapsed);
+    this.dom.objectiveText.textContent = this.phase.objective;
     if(this.dom.devouradoresCount){
       const alive = this.phase.devouradores ? this.phase.devouradores.length : 0;
       this.dom.devouradoresCount.textContent = alive;
     }
     this.dom.healthFill.parentElement.classList.toggle('bar-low', p.health / p.maxHealth < 0.3);
+    this.updateAbilityHUD();
+  }
+
+  /** Mostra/atualiza os ícones das adaptações já desbloqueadas e seu estado de cooldown. */
+  updateAbilityHUD(){
+    const p = this.player;
+    if(!p || !this.dom.abilityBar) return;
+    const order = ['dash', 'shot', 'pulse', 'overload'];
+    const unlockedAny = order.some(k => p.abilities[k]);
+    if(this.dom.abilityRow) this.dom.abilityRow.style.display = unlockedAny ? 'flex' : 'none';
+    order.forEach(key => {
+      if(!p.abilities[key]) return;
+      let el = this.dom.abilityBar.querySelector(`[data-ability="${key}"]`);
+      if(!el){
+        el = document.createElement('div');
+        el.className = 'ability-slot';
+        el.dataset.ability = key;
+        el.innerHTML = `<span class="ability-key">${ABILITY_META[key].keyLabel}</span><span class="ability-label">${ABILITY_META[key].label}</span>`;
+        this.dom.abilityBar.appendChild(el);
+      }
+      const getterName = 'can' + key.charAt(0).toUpperCase() + key.slice(1);
+      el.classList.toggle('ready', !!p[getterName]);
+    });
   }
 
   formatTime(s){
@@ -362,13 +732,26 @@ class Game {
     ctx.clearRect(0, 0, b.w, b.h);
 
     ctx.save();
-    ctx.translate(this.shakeX, this.shakeY);
+
+    // pequeno zoom ao iniciar uma fase, suavizando com ease-out
+    const easedZoom = 1 - Math.pow(1 - this.phaseZoomT, 3);
+    const zoom = 1 + (1 - easedZoom) * 0.07;
+    ctx.translate(b.w / 2, b.h / 2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-b.w / 2, -b.h / 2);
+
+    ctx.translate(this.shakeX - this.camLeadX, this.shakeY - this.camLeadY);
 
     this.renderBackground(ctx);
 
-    if(this.phase && (this.state === 'playing' || this.state === 'dialogue')){
+    if(this.phase && (this.state === 'playing' || this.state === 'dialogue' || this.state === 'unlock')){
       this.phase.render(ctx);
       this.renderBossBar(ctx);
+      this.renderPlayerProjectiles(ctx);
+    }
+
+    if(this.state === 'endingCinematic'){
+      this.renderEndingCinematic(ctx);
     }
 
     this.renderParticles(ctx);
@@ -378,7 +761,118 @@ class Game {
       ctx.fillRect(0, 0, b.w, b.h);
     }
 
+    if(this.phaseFadeIn > 0){
+      ctx.fillStyle = `rgba(6,8,12,${this.phaseFadeIn})`;
+      ctx.fillRect(0, 0, b.w, b.h);
+    }
+
     ctx.restore();
+  }
+
+  /** Desenha os projéteis do Disparo de Energia (Boss 2) — separado dos projéteis inimigos. */
+  renderPlayerProjectiles(ctx){
+    if(!this.phase || !this.phase.playerProjectiles) return;
+    this.phase.playerProjectiles.forEach(pr => {
+      ctx.save();
+      ctx.shadowColor = pr.color;
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = pr.color;
+      ctx.beginPath();
+      ctx.arc(pr.x, pr.y, pr.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  /**
+   * Cinemática final. Reaproveita fundo, câmera e partículas já existentes
+   * em vez de criar telas novas:
+   * - 'rebirth'/'evolution': a célula se divide (1→2→4→8) enquanto a câmera
+   *   se afasta, revelando uma silhueta humana geométrica (mesma linguagem
+   *   de "tudo é forma desenhada em Canvas" do resto do jogo). 'evolution'
+   *   ainda solta partículas douradas, sugerindo eras passando aceleradas.
+   * - 'mutation': uma massa instável se multiplica sem controle.
+   */
+  renderEndingCinematic(ctx){
+    const b = this.bounds, cx = b.w / 2, cy = b.h / 2;
+    const t = Math.min(1, this.endingT / this.endingDuration);
+
+    if(this.endingKind === 'rebirth' || this.endingKind === 'evolution'){
+      const splitT = Math.min(1, t / 0.4);
+      const stage = splitT < 0.3 ? 0 : splitT < 0.6 ? 1 : splitT < 0.85 ? 2 : 3; // 1,2,4,8 células
+      const count = Math.pow(2, stage);
+      const zoomOutT = Math.max(0, (t - 0.4) / 0.6);
+      const eased = 1 - Math.pow(1 - zoomOutT, 3);
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(1 - eased * 0.72, 1 - eased * 0.72);
+      ctx.translate(-cx, -cy);
+
+      const spread = 10 + stage * 9;
+      for(let i = 0; i < count; i++){
+        const ang = (Math.PI * 2 * i) / count + this.time * 0.15;
+        const dist = count === 1 ? 0 : spread;
+        const x = cx + Math.cos(ang) * dist;
+        const y = cy + Math.sin(ang) * dist;
+        ctx.save();
+        ctx.shadowColor = '#8fd9ff';
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = '#8fd9ff';
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(x, y, 15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+
+      if(eased > 0){
+        // silhueta humana bem simples, no mesmo estilo geométrico do resto do jogo
+        const headR = 40, torsoW = 110, torsoH = 200;
+        ctx.save();
+        ctx.globalAlpha = eased;
+        ctx.strokeStyle = 'rgba(238,242,246,0.55)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy - torsoH / 2 - headR, headR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cx - torsoW / 2, cy - torsoH / 2);
+        ctx.quadraticCurveTo(cx - torsoW / 2 - 20, cy + torsoH / 4, cx - torsoW / 3, cy + torsoH / 2);
+        ctx.lineTo(cx + torsoW / 3, cy + torsoH / 2);
+        ctx.quadraticCurveTo(cx + torsoW / 2 + 20, cy + torsoH / 4, cx + torsoW / 2, cy - torsoH / 2);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+
+        if(this.endingKind === 'evolution' && Math.random() < 0.4){
+          this.spawnParticles(
+            cx + (Math.random() - 0.5) * torsoW,
+            cy + (Math.random() - 0.5) * torsoH,
+            '#ffd166', 2, { life: 0.6, speed: 40, glow: true }
+          );
+        }
+      }
+    } else if(this.endingKind === 'mutation'){
+      const blobs = 2 + Math.floor(t * 6);
+      for(let i = 0; i < blobs; i++){
+        const ang = (Math.PI * 2 * i) / blobs + this.time * (0.5 + i * 0.1);
+        const dist = 30 + (i % 3) * 22 + Math.sin(this.time * 3 + i) * 6;
+        const x = cx + Math.cos(ang) * dist;
+        const y = cy + Math.sin(ang) * dist;
+        ctx.save();
+        ctx.shadowColor = '#b23347';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = i % 2 === 0 ? '#b23347' : '#7c1f8a';
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        ctx.arc(x, y, 10 + Math.sin(this.time * 4 + i) * 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      if(Math.random() < 0.15) this.triggerShake(3, 0.15);
+    }
   }
 
   renderBossBar(ctx){
