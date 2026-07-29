@@ -34,13 +34,16 @@ As habilidades especiais são liberadas gradualmente durante a campanha.
 
 Em telas pequenas, o jogo mostra automaticamente:
 
-- direcional multitoque;
+- joystick analógico com controle de direção e intensidade;
 - botão de ataque;
 - botões para Dash, Tiro, Pulso e Sobrecarga;
 - botão de pausa;
 - interface adaptada para orientação vertical e horizontal.
 
 É possível movimentar e atacar simultaneamente.
+
+O Canvas mantém a proporção original em celulares horizontais e verticais, modo
+fullscreen e diferentes resoluções de computador, sem esticar a imagem.
 
 ## Dificuldades
 

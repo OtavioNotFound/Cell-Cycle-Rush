@@ -49,8 +49,16 @@ class Game {
     // combo de abates: recompensa jogar agressivo (cura + regen de energia mais rápida)
     this.combo = 0;
     this.comboTimer = 0;
+    this.touchMoveX = 0;
+    this.touchMoveY = 0;
+    this.joystickPointerId = null;
+    this.layoutSignature = '';
+    this.nextLayoutCheck = 0;
 
     this.dom = {
+      app: document.getElementById('app'),
+      hud: document.getElementById('hud'),
+      canvasWrap: document.getElementById('canvasWrap'),
       titleScreen: document.getElementById('titleScreen'),
       newGameBtn: document.getElementById('newGameBtn'),
       ngPlusBtn: document.getElementById('ngPlusBtn'),
@@ -109,6 +117,8 @@ class Game {
       eventDescription: document.getElementById('eventDescription'),
       eventChoices: document.getElementById('eventChoices'),
       mobileControls: document.getElementById('mobileControls'),
+      joystickZone: document.getElementById('joystickZone'),
+      joystickKnob: document.getElementById('joystickKnob'),
       phaseBanner: document.getElementById('phaseBanner'),
       phaseBannerText: document.getElementById('phaseBannerText'),
       unlockScreen: document.getElementById('unlockScreen'),
@@ -123,6 +133,11 @@ class Game {
     this.refreshNgPlusAvailability();
 
     this.bindInput();
+    window.addEventListener('resize', () => this.updateResponsiveLayout(true));
+    window.addEventListener('orientationchange', () => setTimeout(() => this.updateResponsiveLayout(true), 120));
+    document.addEventListener('fullscreenchange', () => setTimeout(() => this.updateResponsiveLayout(true), 50));
+    window.visualViewport?.addEventListener('resize', () => this.updateResponsiveLayout(true));
+    this.updateResponsiveLayout(true);
     requestAnimationFrame(this.loop.bind(this));
   }
 
@@ -194,25 +209,44 @@ class Game {
 
   bindMobileControls(){
     if(!this.dom.mobileControls) return;
-    this.dom.mobileControls.querySelectorAll('[data-move-key]').forEach(button => {
-      const key = button.dataset.moveKey;
-      const press = e => {
-        e.preventDefault();
-        if(this.state !== 'playing') return;
-        button.setPointerCapture?.(e.pointerId);
-        this.keys[key] = true;
-        button.classList.add('pressed');
-      };
-      const release = e => {
-        e.preventDefault();
-        this.keys[key] = false;
-        button.classList.remove('pressed');
-      };
-      button.addEventListener('pointerdown', press);
-      button.addEventListener('pointerup', release);
-      button.addEventListener('pointercancel', release);
-      button.addEventListener('lostpointercapture', release);
+    const zone = this.dom.joystickZone;
+    const updateJoystick = e => {
+      if(this.joystickPointerId !== e.pointerId) return;
+      const rect = zone.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const maxDistance = Math.min(rect.width, rect.height) * .32;
+      let dx = e.clientX - cx;
+      let dy = e.clientY - cy;
+      const distance = Math.hypot(dx, dy);
+      if(distance > maxDistance){
+        dx = dx / distance * maxDistance;
+        dy = dy / distance * maxDistance;
+      }
+      this.touchMoveX = dx / maxDistance;
+      this.touchMoveY = dy / maxDistance;
+      this.dom.joystickKnob.style.transform = `translate(${dx}px,${dy}px)`;
+    };
+    const releaseJoystick = e => {
+      if(this.joystickPointerId !== e.pointerId) return;
+      this.joystickPointerId = null;
+      this.touchMoveX = 0;
+      this.touchMoveY = 0;
+      zone.classList.remove('active');
+      this.dom.joystickKnob.style.transform = 'translate(0,0)';
+    };
+    zone.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      if(this.state !== 'playing' || this.joystickPointerId !== null) return;
+      this.joystickPointerId = e.pointerId;
+      zone.setPointerCapture?.(e.pointerId);
+      zone.classList.add('active');
+      updateJoystick(e);
     });
+    zone.addEventListener('pointermove', e => { e.preventDefault(); updateJoystick(e); });
+    zone.addEventListener('pointerup', releaseJoystick);
+    zone.addEventListener('pointercancel', releaseJoystick);
+    zone.addEventListener('lostpointercapture', releaseJoystick);
     const actions = {
       attack:() => this.triggerAttack(),
       dash:() => this.triggerDash(),
@@ -232,6 +266,17 @@ class Game {
       button.addEventListener('pointerup', release);
       button.addEventListener('pointercancel', release);
     });
+  }
+
+  resetTouchControls(){
+    this.touchMoveX = 0;
+    this.touchMoveY = 0;
+    this.joystickPointerId = null;
+    if(this.dom.joystickZone) this.dom.joystickZone.classList.remove('active');
+    if(this.dom.joystickKnob) this.dom.joystickKnob.style.transform = 'translate(0,0)';
+    if(this.dom.mobileControls){
+      this.dom.mobileControls.querySelectorAll('.pressed').forEach(button => button.classList.remove('pressed'));
+    }
   }
 
   triggerAttack(){
@@ -264,8 +309,13 @@ class Game {
     if(this.keys['a'] || this.keys['arrowleft']) dx -= 1;
     if(this.keys['d'] || this.keys['arrowright']) dx += 1;
     if(dx === 0 && dy === 0){
-      dx = Math.cos(p._lastAngle || 0);
-      dy = Math.sin(p._lastAngle || 0);
+      if(Math.hypot(this.touchMoveX, this.touchMoveY) > .12){
+        dx = this.touchMoveX;
+        dy = this.touchMoveY;
+      }else{
+        dx = Math.cos(p._lastAngle || 0);
+        dy = Math.sin(p._lastAngle || 0);
+      }
     }
     const len = Math.hypot(dx, dy) || 1;
     p.dashDirX = dx / len;
@@ -390,6 +440,7 @@ class Game {
     this.player = null;
     this.particles = [];
     this.combo = 0;
+    this.resetTouchControls();
     this.idleAchievementTime = 0;
     this.camLeadX = 0;
     this.camLeadY = 0;
@@ -502,6 +553,31 @@ class Game {
     document.body.classList.toggle('high-contrast', options.colorblind);
     this.audio.volume = options.volume / 100;
     try{ localStorage.setItem('ccrAccessibility', JSON.stringify(options)); }catch(e){}
+    this.updateResponsiveLayout(true);
+  }
+
+  updateResponsiveLayout(force = false){
+    if(!this.dom.canvasWrap || !this.dom.hud) return;
+    const viewportWidth = document.documentElement?.clientWidth || window.innerWidth || 900;
+    const viewportHeight = window.visualViewport?.height || window.innerHeight || 700;
+    const appWidth = this.dom.app?.clientWidth || viewportWidth;
+    const hudHeight = this.dom.hud.offsetHeight || this.dom.hud.getBoundingClientRect?.().height || 0;
+    const dialogueVisible = this.dom.dialogueBox && !this.dom.dialogueBox.classList.contains('hidden');
+    const dialogueHeight = dialogueVisible
+      ? (this.dom.dialogueBox.offsetHeight || this.dom.dialogueBox.getBoundingClientRect?.().height || 0)
+      : 0;
+    const horizontalPadding = viewportWidth <= 760 ? 10 : 28;
+    const verticalReserve = viewportWidth <= 760 ? 14 : 28;
+    const availableWidth = Math.max(160, Math.min(900, appWidth - horizontalPadding));
+    const availableHeight = Math.max(100, viewportHeight - hudHeight - dialogueHeight - verticalReserve);
+    const scale = Math.max(.18, Math.min(1, availableWidth / 900, availableHeight / 560));
+    const width = Math.floor(900 * scale);
+    const height = Math.floor(560 * scale);
+    const signature = `${viewportWidth}:${viewportHeight}:${Math.round(hudHeight)}:${Math.round(dialogueHeight)}:${width}:${height}`;
+    if(!force && signature === this.layoutSignature) return;
+    this.layoutSignature = signature;
+    this.dom.canvasWrap.style.width = `${width}px`;
+    this.dom.canvasWrap.style.height = `${height}px`;
   }
 
   chooseDifficulty(mode){
@@ -675,9 +751,7 @@ class Game {
     if(this.state !== 'playing') return;
     this.state = 'paused';
     this.keys = {};
-    if(this.dom.mobileControls){
-      this.dom.mobileControls.querySelectorAll('.pressed').forEach(button => button.classList.remove('pressed'));
-    }
+    this.resetTouchControls();
     this.dom.pauseProgressRule.textContent = this.difficulty === 'soulslike'
       ? 'SOULSLIKE: ao morrer, toda a Essência e todas as evoluções desta tentativa serão perdidas.'
       : 'NORMAL: a Essência e estas evoluções são permanentes e continuam no NG+.';
@@ -793,6 +867,7 @@ class Game {
 
   onPhaseComplete(){
     this.keys = {};
+    this.resetTouchControls();
     this.audio.phaseComplete();
     // completar uma fase inteira recupera parte da vida: o jogador nunca deve
     // sentir que uma partida está perdida só porque errou no começo.
@@ -1315,12 +1390,18 @@ class Game {
     if(this.keys['s'] || this.keys['arrowdown']) dy += 1;
     if(this.keys['a'] || this.keys['arrowleft']) dx -= 1;
     if(this.keys['d'] || this.keys['arrowright']) dx += 1;
-    const hasInput = dx !== 0 || dy !== 0;
+    const keyboardInput = dx !== 0 || dy !== 0;
+    if(!keyboardInput){
+      dx = this.touchMoveX;
+      dy = this.touchMoveY;
+    }
+    const inputMagnitude = Math.hypot(dx, dy);
+    const hasInput = inputMagnitude > .1;
     let tx = 0, ty = 0;
     if(hasInput){
-      const len = Math.hypot(dx, dy) || 1; // normaliza para diagonal perfeita (mesma velocidade em qualquer direção)
-      tx = (dx / len) * p.speed;
-      ty = (dy / len) * p.speed;
+      const strength = keyboardInput ? 1 : Math.min(1, inputMagnitude);
+      tx = (dx / inputMagnitude) * p.speed * strength;
+      ty = (dy / inputMagnitude) * p.speed * strength;
     }
 
     // Dash Celular: por uma janela curta, ignora o input e dispara na direção travada
@@ -1371,6 +1452,10 @@ class Game {
     const dt = frozen ? 0 : rawDt;
     this.time += dt;
     if(this.dom.mobileControls) this.dom.mobileControls.classList.toggle('active', this.state === 'playing');
+    if(ts >= this.nextLayoutCheck){
+      this.nextLayoutCheck = ts + 250;
+      this.updateResponsiveLayout();
+    }
 
     if(this.phaseZoomT < 1){
       this.phaseZoomT = Math.min(1, this.phaseZoomT + rawDt / 0.5);
